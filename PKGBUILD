@@ -1,5 +1,5 @@
 pkgname=ferronweb
-pkgver=2.7.0
+pkgver=2.8.1
 pkgrel=1
 pkgdesc="Ferron web server"
 arch=('x86_64' 'i686' 'armv7h' 'aarch64' 'riscv64')
@@ -8,10 +8,10 @@ license=('custom')
 depends=('libcap' 'unzip')
 backup=('etc/ferron.kdl')
 install=ferron.install
-_sha256sums_x86_64='c95571031f0623a7a5364053a7b4ed920e3e86f5fd458fdbf0654b803cbd837c'
-_sha256sums_i686='461bed8eeed996871115d63f9f55984c9aa6153ff289036cf649234929858ed1'
-_sha256sums_armv7='cae9b8ac258daab655201f643d7dc9659b8f5dbc8dd0ac61451b876b4b930788'
-_sha256sums_aarch64='df1391e3701e5ecc90159bd61b3538e02e2f5375327ffc8333e3d704c7892c0a'
+_sha256sums_x86_64='3cf41cb1758c9fc653354a7fa5be2ca88a10a03a764cd82df67545216a3c5302'
+_sha256sums_i686='f6143583f9b78c3e9fb75c09844fb87eca2f1173c91230f87ee63f950d3432d4'
+_sha256sums_armv7='d704a2148eb3c6b4e340534b4de02a4ef396969474fe347a1d075daa62cb410d'
+_sha256sums_aarch64='d4b5174146cbbd57a83f61b52dc2f969c5afbcaeb212531416ae7d5aa9769d07'
 _sha256sums_riscv64='bc322aadb79b67c8b3a3ea0e10515aac6c5976c4e842b7451b9f5df2d96ea6e4'
 case "$CARCH" in
     x86_64) 
