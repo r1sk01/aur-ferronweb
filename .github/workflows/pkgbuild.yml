@@ -131,7 +131,7 @@ jobs:
                 EOF
                 ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
 
-                for PKG in ferronweb ferronweb-bin; do
+                for PKG in ferronweb ferronweb-bin ferronweb-git; do
                     echo "Publishing $PKG"
                     git clone ssh://aur@aur.archlinux.org/$PKG.git aur-$PKG
                     cd aur-$PKG
