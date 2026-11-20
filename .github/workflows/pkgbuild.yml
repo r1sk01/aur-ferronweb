@@ -11,7 +11,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v5
 
             - name: Set up environment
               run: |
@@ -28,7 +28,7 @@ jobs:
               run: |
                 LATEST_VERSION=$(curl -fsL https://dl.ferron.sh/latest2.ferron)
                 echo "Latest version: $LATEST_VERSION"
-                CURRENT_VERSION=$(grep -oP 'pkgver=\K[^\s]+' PKGBUILD)
+                CURRENT_VERSION=$(grep -oP 'pkgver=\K[^\s]+' packages/ferronweb/PKGBUILD)
                 echo "Current version: $CURRENT_VERSION"
                 echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
                 echo "CURRENT_VERSION=$CURRENT_VERSION" >> $GITHUB_ENV
@@ -72,31 +72,25 @@ jobs:
                 cd ../..
                 sudo rm -rf ./pacman
 
-            - name: Update PKGBUILD for all architectures
+            - name: Update PKGBUILDs for all architectures
               if: env.UPDATENEEDED == 'true' || env.MANUALTRIG == 'true'
               run: |
-                echo "Updating PKGBUILD from version $CURRENT_VERSION to $LATEST_VERSION"
-                sed -i "s/pkgver=.*$/pkgver=$LATEST_VERSION/g" PKGBUILD
-                if [ "$UPDATENEEDED" == "true" ]; then
-                    sed -i "s/pkgrel=.*$/pkgrel=1/g" PKGBUILD
-                fi
-                LIBC="gnu"
-                declare -A ARCH_MAPPINGS=(
-                    ["x86_64"]="x86_64"
-                    ["i686"]="i686"
-                    ["armv7h"]="armv7"
-                    ["aarch64"]="aarch64"
-                    ["riscv64"]="riscv64gc"
-                )
-                for PKG_ARCH in "${!ARCH_MAPPINGS[@]}"; do
-                    SRC_ARCH="${ARCH_MAPPINGS[$PKG_ARCH]}"
-                    echo "Processing architecture: $SRC_ARCH (package arch: $PKG_ARCH)"
-                    if [ "$SRC_ARCH" == "armv7" ]; then
-                        ABI="eabihf"
-                    else
-                        ABI=""
-                    fi
-                    FILE_NAME="ferron-$LATEST_VERSION-$SRC_ARCH-unknown-linux-${LIBC}${ABI}.zip"
+                echo "Updating from version $CURRENT_VERSION to $LATEST_VERSION"
+                sed -i "s/^pkgver=.*\$/pkgver=$LATEST_VERSION/" packages/ferronweb-bin/PKGBUILD
+                sed -i "s/^pkgver=.*\$/pkgver=$LATEST_VERSION/" packages/ferronweb/PKGBUILD
+
+                # pkgver bumps the source checksum too, the tarball changes with the tag
+                SRCSUM=$(curl -fsSL "https://github.com/ferronweb/ferron/archive/refs/tags/$LATEST_VERSION.tar.gz" | sha256sum | cut -d ' ' -f 1)
+                sed -i "s/^sha256sums=.*\$/sha256sums=('$SRCSUM')/" packages/ferronweb/PKGBUILD
+
+                for PKG_ARCH in x86_64 i686 armv7h aarch64 riscv64; do
+                    case "$PKG_ARCH" in
+                        armv7h) SRC_ARCH='armv7'; ABI='eabihf'; KEY='armv7' ;;
+                        riscv64) SRC_ARCH='riscv64gc'; ABI=''; KEY='riscv64' ;;
+                        *) SRC_ARCH="$PKG_ARCH"; ABI=''; KEY="$PKG_ARCH" ;;
+                    esac
+                    echo "Processing $PKG_ARCH (upstream $SRC_ARCH, checksum key $KEY)"
+                    FILE_NAME="ferron-$LATEST_VERSION-$SRC_ARCH-unknown-linux-gnu${ABI}.zip"
                     URL="https://dl.ferron.sh/$LATEST_VERSION/$FILE_NAME"
                     echo "Downloading: $URL"
                     curl -fsSL "$URL" -o "$FILE_NAME" || {
@@ -104,10 +98,11 @@ jobs:
                         exit 1
                     }
                     CHECKSUM=$(sha256sum "$FILE_NAME" | cut -d ' ' -f 1)
-                    echo "Checksum for $PKG_ARCH: $CHECKSUM"
-                    sed -i "s/_sha256sums_$SRC_ARCH=.*$/_sha256sums_$SRC_ARCH='$CHECKSUM'/g" PKGBUILD
+                    echo "Checksum for $KEY: $CHECKSUM"
+                    sed -i "s/^sha256sums_$KEY=.*\$/sha256sums_$KEY='$CHECKSUM'/" packages/ferronweb-bin/PKGBUILD
                 done
-                cat PKGBUILD
+                cat packages/ferronweb-bin/PKGBUILD
+                cat packages/ferronweb/PKGBUILD
 
             - name: Commit and push changes to GitHub
               if: env.UPDATENEEDED == 'true' || env.MANUALTRIG == 'true'
@@ -115,7 +110,7 @@ jobs:
                 git config --global init.defaultBranch master
                 git config --local user.email "action@github.com"
                 git config --local user.name "GitHub Action"
-                git add PKGBUILD
+                git add packages
                 git diff --cached --quiet || git commit -m "Update to version $LATEST_VERSION"
                 git push -u origin master || echo "Nothing to push"
 
@@ -135,12 +130,17 @@ jobs:
                     User $AURUSER
                 EOF
                 ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
-                git clone ssh://aur@aur.archlinux.org/ferronweb.git aur-repo
-                cd aur-repo
-                cp ../PKGBUILD ../ferron.install ./
-                makepkg --printsrcinfo > .SRCINFO
-                git config --local user.email "action@github.com"
-                git config --local user.name "GitHub Action"
-                git add PKGBUILD ferron.install .SRCINFO
-                git diff --cached --quiet || git commit -m "Update to version $LATEST_VERSION"
-                git push -u origin master || echo "Nothing to push"
+
+                for PKG in ferronweb ferronweb-bin; do
+                    echo "Publishing $PKG"
+                    git clone ssh://aur@aur.archlinux.org/$PKG.git aur-$PKG
+                    cd aur-$PKG
+                    cp ../packages/$PKG/PKGBUILD ../packages/$PKG/ferron.install ./
+                    makepkg --printsrcinfo > .SRCINFO
+                    git config --local user.email "action@github.com"
+                    git config --local user.name "GitHub Action"
+                    git add PKGBUILD ferron.install .SRCINFO
+                    git diff --cached --quiet || git commit -m "Update to version $LATEST_VERSION"
+                    git push -u origin master || echo "Nothing to push for $PKG"
+                    cd ..
+                done
