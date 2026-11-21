@@ -94,55 +94,22 @@ jobs:
               run: |
                 PKG_DIR="packages/${{ matrix.pkg }}"
                 TARGET="${{ steps.target.outputs.version }}"
-                PKG="${{ matrix.pkg }}"
                 CURRENT=$(grep -oP 'pkgver=\K[^\s]+' "$PKG_DIR/PKGBUILD")
                 echo "current=$CURRENT target=$TARGET"
 
-                # true when the AUR copy of the PKGBUILD already matches ours
-                aur_matches() {
-                    local remote
-                    remote=$(curl -fsSL "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=$PKG" 2>/dev/null)
-                    [ "$remote" = "$(cat "$PKG_DIR/PKGBUILD")" ]
-                }
-
-                # users only rebuild when pkgrel moves, so any change that does
-                # not come from upstream has to bump it
-                bump_pkgrel() {
-                    local rel
-                    rel=$(grep -oP 'pkgrel=\K[0-9]+' "$PKG_DIR/PKGBUILD")
-                    rel=$((rel + 1))
-                    sed -i "s/^pkgrel=.*\$/pkgrel=$rel/" "$PKG_DIR/PKGBUILD"
-                    echo "pkgrel=$rel"
-                }
-
-                # a VCS package has no upstream version to follow, so it moves
-                # only when its PKGBUILD differs from the AUR copy
+                # a VCS package has no upstream version to follow, so there is
+                # nothing to bump here. It is decided after .SRCINFO is built.
                 if [ "${{ matrix.kind }}" = "git" ]; then
-                    if aur_matches; then
-                        echo "changed=false" >> $GITHUB_OUTPUT
-                        exit 0
-                    fi
-                    bump_pkgrel
-                    echo "changed=true" >> $GITHUB_OUTPUT
+                    echo "versionchanged=false" >> $GITHUB_OUTPUT
                     exit 0
                 fi
 
                 # upstream reports the RC as 3.0.0-rc.11, and pkgver may not
                 # hold a hyphen
                 PKGVER="${TARGET//-/}"
-                echo "pkgver=$PKGVER"
 
                 if [ "$CURRENT" = "$PKGVER" ]; then
-                    # same upstream version, so only a packaging change can be
-                    # pending. Compare against the AUR, not HEAD, because a
-                    # packaging change already committed here still has to ship.
-                    if aur_matches; then
-                        echo "changed=false" >> $GITHUB_OUTPUT
-                        exit 0
-                    fi
-                    bump_pkgrel
-                    echo "packaging differs on the AUR"
-                    echo "changed=true" >> $GITHUB_OUTPUT
+                    echo "versionchanged=false" >> $GITHUB_OUTPUT
                     exit 0
                 fi
 
@@ -150,11 +117,11 @@ jobs:
                 sed -i "s/^pkgver=.*\$/pkgver=$PKGVER/" "$PKG_DIR/PKGBUILD"
                 # a new upstream version resets the packaging release
                 sed -i 's/^pkgrel=.*$/pkgrel=1/' "$PKG_DIR/PKGBUILD"
-                echo "changed=true" >> $GITHUB_OUTPUT
+                echo "versionchanged=true" >> $GITHUB_OUTPUT
 
             - name: Update checksums
               # a VCS package has no versioned source to checksum
-              if: steps.upd.outputs.changed == 'true' && matrix.kind != 'git'
+              if: steps.upd.outputs.versionchanged == 'true' && matrix.kind != 'git'
               run: |
                 PKG_DIR="packages/${{ matrix.pkg }}"
                 TARGET="${{ steps.target.outputs.version }}"
@@ -216,13 +183,15 @@ jobs:
                 # makepkg would and write it into the scratch copy.
                 if [ "${{ matrix.kind }}" = "git" ]; then
                     # pkgver() needs the repo and its tags, so give it a shallow
-                    # clone to describe. The build itself uses the PKGBUILD source.
+                    # clone to describe. Resolve the version into the real
+                    # PKGBUILD before .SRCINFO is generated from it.
                     ( cd "$SCRATCH" && srcdir="$SCRATCH/src" && mkdir -p "$srcdir" \
                         && git clone -q --depth=200 --branch develop-3.x \
                             https://github.com/ferronweb/ferron.git "$srcdir/ferron" \
                         && source ./PKGBUILD >/dev/null 2>&1 && pkgver > /tmp/pkgver.txt )
                     RESOLVED=$(cat /tmp/pkgver.txt)
-                    sed -i "s/^pkgver=.*\$/pkgver=$RESOLVED/" "$SCRATCH/PKGBUILD"
+                    sed -i "s/^pkgver=.*\$/pkgver=$RESOLVED/" "$PKG_DIR/PKGBUILD"
+                    cp "$PKG_DIR/PKGBUILD" "$SCRATCH/PKGBUILD"
                     echo "resolved pkgver=$RESOLVED"
                 fi
 
@@ -237,10 +206,41 @@ jobs:
                 cp "$SCRATCH/.SRCINFO" "$PKG_DIR/.SRCINFO"
                 chmod 644 "$PKG_DIR/.SRCINFO"
 
+            - name: Decide whether to publish
+              id: decide
+              run: |
+                PKG_DIR="$GITHUB_WORKSPACE/packages/${{ matrix.pkg }}"
+                PKG="${{ matrix.pkg }}"
+
+                # every tracked file has to match before there is nothing to do.
+                # .SRCINFO is the one that goes stale silently, because it is
+                # generated and gitignored, so compare it too.
+                for f in PKGBUILD $(cd "$PKG_DIR" && ls *.install 2>/dev/null) .SRCINFO; do
+                    [ -f "$PKG_DIR/$f" ] || continue
+                    remote=$(curl -fsSL "https://aur.archlinux.org/cgit/aur.git/plain/$f?h=$PKG" 2>/dev/null)
+                    if [ "$remote" = "$(cat "$PKG_DIR/$f")" ]; then
+                        continue
+                    fi
+                    # users only rebuild when pkgrel moves, so a packaging change
+                    # that is not an upstream bump has to move it
+                    if [ "${{ steps.upd.outputs.versionchanged }}" = "false" ]; then
+                        rel=$(grep -oP 'pkgrel=\K[0-9]+' "$PKG_DIR/PKGBUILD")
+                        rel=$((rel + 1))
+                        sed -i "s/^pkgrel=.*\$/pkgrel=$rel/" "$PKG_DIR/PKGBUILD"
+                        echo "packaging differs on the AUR, pkgrel=$rel"
+                        ( cd "$PKG_DIR" && CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO 2>/dev/null )
+                    fi
+                    echo "changed=true" >> $GITHUB_OUTPUT
+                    exit 0
+                done
+
+                echo "changed=false" >> $GITHUB_OUTPUT
+                echo "$PKG is unchanged on the AUR"
+
             - name: Upload package
               # unchanged packages have nothing to publish, and uploading them
               # would make the publish step republish everything every run
-              if: steps.upd.outputs.changed == 'true'
+              if: steps.decide.outputs.changed == 'true'
               uses: actions/upload-artifact@v5
               with:
                 name: pkg-${{ matrix.pkg }}
@@ -265,6 +265,7 @@ jobs:
               with:
                 path: artifacts
                 pattern: pkg-*
+              continue-on-error: true
 
             - name: Set up SSH for AUR
               env:
