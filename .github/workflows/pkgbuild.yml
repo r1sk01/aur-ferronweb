@@ -168,22 +168,22 @@ jobs:
                 # makepkg refuses to run as root, and act's container is root.
                 # Work in a scratch copy so a bind-mounted workspace keeps its
                 # ownership, and only the generated .SRCINFO is copied back.
-                PKG_DIR="packages/${{ matrix.pkg }}"
-                rm -rf /tmp/srccheck && mkdir -p /tmp/srccheck
-                cp -r "$PKG_DIR"/. /tmp/srccheck/
+                # Absolute paths throughout: the scratch step changes directory.
+                WORKSPACE="$GITHUB_WORKSPACE"
+                PKG_DIR="$WORKSPACE/packages/${{ matrix.pkg }}"
+                SCRATCH=/tmp/srccheck
+
+                rm -rf "$SCRATCH" && mkdir -p "$SCRATCH"
+                cp -r "$PKG_DIR"/. "$SCRATCH"/
                 if [ "$(id -u)" = "0" ]; then
                     id builder > /dev/null 2>&1 || useradd -m builder
-                    chown -R builder:builder /tmp/srccheck
-                    runuser -u builder -- bash -c '
-                        cd /tmp/srccheck &&
-                        CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO
-                    '
+                    chown -R builder:builder "$SCRATCH"
+                    runuser -u builder -- bash -c "cd '$SCRATCH' && CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO"
                 else
-                    cd /tmp/srccheck
-                    CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO
+                    ( cd "$SCRATCH" && CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO )
                 fi
-                test -s /tmp/srccheck/.SRCINFO
-                cp /tmp/srccheck/.SRCINFO "$PKG_DIR/.SRCINFO"
+                test -s "$SCRATCH/.SRCINFO"
+                cp "$SCRATCH/.SRCINFO" "$PKG_DIR/.SRCINFO"
                 chmod 644 "$PKG_DIR/.SRCINFO"
 
             - name: Upload package
