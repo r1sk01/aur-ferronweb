@@ -196,7 +196,7 @@ jobs:
             - name: Set up SSH for AUR
               env:
                 AURSSHKEY: ${{ secrets.AURSSHKEY }}
-                AURUSER: 'LunarN0v4'
+                AURUSER: 'r1sk'
               run: |
                 mkdir -p ~/.ssh
                 echo "$AURSSHKEY" > ~/.ssh/aur_key
@@ -210,7 +210,7 @@ jobs:
 
             - name: Apply, commit and publish changed packages
               env:
-                AURUSER: 'LunarN0v4'
+                AURUSER: 'r1sk'
               run: |
                 git config --global init.defaultBranch master
                 git config --local user.email "action@github.com"
