@@ -7,120 +7,157 @@ on:
     push:
 
 jobs:
-    pkgupdate:
+    resolve:
+        runs-on: ubuntu-latest
+        outputs:
+            stable: ${{ steps.ver.outputs.stable }}
+            rc: ${{ steps.ver.outputs.rc }}
+        steps:
+            - name: Resolve upstream versions
+              id: ver
+              run: |
+                STABLE=$(curl -fsL https://dl.ferron.sh/latest2.ferron)
+                RC=$(curl -fsL https://dl.ferron.sh/latest3.ferron)
+                echo "Latest stable: $STABLE"
+                echo "Latest release candidate: $RC"
+                echo "stable=$STABLE" >> $GITHUB_OUTPUT
+                echo "rc=$RC" >> $GITHUB_OUTPUT
+
+    update:
+        needs: resolve
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                include:
+                    - pkg: ferron
+                      kind: stable
+                    - pkg: ferronweb
+                      kind: stable
+                    - pkg: ferron-rc
+                      kind: rc
+                    - pkg: ferron-git
+                      kind: git
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v5
+
+            - name: Determine target version
+              id: target
+              run: |
+                case "${{ matrix.kind }}" in
+                    stable) echo "version=${{ needs.resolve.outputs.stable }}" >> $GITHUB_OUTPUT ;;
+                    rc) echo "version=${{ needs.resolve.outputs.rc }}" >> $GITHUB_OUTPUT ;;
+                    git) echo "version=" >> $GITHUB_OUTPUT ;;
+                esac
+
+            - name: Update PKGBUILD
+              id: upd
+              run: |
+                PKG_DIR="packages/${{ matrix.pkg }}"
+                TARGET="${{ steps.target.outputs.version }}"
+                CURRENT=$(grep -oP 'pkgver=\K[^\s]+' "$PKG_DIR/PKGBUILD")
+                echo "current=$CURRENT target=$TARGET"
+
+                if [ "${{ matrix.kind }}" = "git" ]; then
+                    echo "changed=true" >> $GITHUB_OUTPUT
+                    exit 0
+                fi
+
+                if [ "$CURRENT" = "$TARGET" ]; then
+                    echo "changed=false" >> $GITHUB_OUTPUT
+                    exit 0
+                fi
+
+                sed -i "s/^pkgver=.*\$/pkgver=$TARGET/" "$PKG_DIR/PKGBUILD"
+                sed -i 's/^pkgrel=.*$/pkgrel=1/' "$PKG_DIR/PKGBUILD"
+                echo "changed=true" >> $GITHUB_OUTPUT
+
+            - name: Update checksums
+              if: steps.upd.outputs.changed == 'true'
+              run: |
+                PKG_DIR="packages/${{ matrix.pkg }}"
+                TARGET="${{ steps.target.outputs.version }}"
+                PKG="${{ matrix.pkg }}"
+
+                if [ "$PKG" = "ferronweb" ]; then
+                    for PKG_ARCH in x86_64 i686 armv7h aarch64 riscv64; do
+                        case "$PKG_ARCH" in
+                            armv7h) SRC_ARCH='armv7'; ABI='eabihf'; KEY='armv7' ;;
+                            riscv64) SRC_ARCH='riscv64gc'; ABI=''; KEY='riscv64' ;;
+                            *) SRC_ARCH="$PKG_ARCH"; ABI=''; KEY="$PKG_ARCH" ;;
+                        esac
+                        FILE_NAME="ferron-$TARGET-$SRC_ARCH-unknown-linux-gnu${ABI}.zip"
+                        URL="https://dl.ferron.sh/$TARGET/$FILE_NAME"
+                        echo "Downloading $URL"
+                        curl -fsSL --retry 5 --retry-all-errors "$URL" -o "$FILE_NAME" || {
+                            echo "ERROR: missing upstream build for $SRC_ARCH"
+                            exit 1
+                        }
+                        CHECKSUM=$(sha256sum "$FILE_NAME" | cut -d ' ' -f 1)
+                        echo "  $KEY: $CHECKSUM"
+                        sed -i "s/^sha256sums_$KEY=.*\$/sha256sums_$KEY='$CHECKSUM'/" "$PKG_DIR/PKGBUILD"
+                    done
+                    LICENSE_SUM=$(curl -fsSL --retry 5 --retry-all-errors "https://github.com/ferronweb/ferron/raw/$TARGET/LICENSE" | sha256sum | cut -d ' ' -f 1)
+                    sed -i "s/^sha256sums_LICENSE=.*\$/sha256sums_LICENSE='$LICENSE_SUM'/" "$PKG_DIR/PKGBUILD"
+                else
+                    TAG="$TARGET"
+                    # upstream tags the RC as 3.0.0-rc.11 while pkgver must be 3.0.0rc.11
+                    if [[ "$PKG" == "ferron-rc" ]]; then
+                        TAG="${TARGET/rc./-rc.}"
+                    fi
+                    URL="https://github.com/ferronweb/ferron/archive/refs/tags/$TAG.tar.gz"
+                    echo "Downloading $URL"
+                    SUM=$(curl -fsSL --retry 5 --retry-all-errors "$URL" | sha256sum | cut -d ' ' -f 1)
+                    echo "  tarball: $SUM"
+                    sed -i "s/^sha256sums=.*\$/sha256sums=('$SUM')/" "$PKG_DIR/PKGBUILD"
+                fi
+
+                cd "$PKG_DIR" && CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO 2>/dev/null || true
+
+            - name: Upload updated package
+              if: steps.upd.outputs.changed == 'true'
+              uses: actions/upload-artifact@v4
+              with:
+                name: pkg-${{ matrix.pkg }}
+                path: packages/${{ matrix.pkg }}
+
+    publish:
+        needs: update
+        if: always()
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
               uses: actions/checkout@v5
 
-            - name: Set up environment
+            - name: Download all updated packages
+              uses: actions/download-artifact@v4
+              with:
+                path: artifacts
+                pattern: pkg-*
+
+            - name: Apply updates
               run: |
-                sudo apt-get update
-                sudo apt-get install -y curl
-                if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-                  echo "MANUALTRIG=true" >> $GITHUB_ENV
-                else
-                  echo "MANUALTRIG=false" >> $GITHUB_ENV
-                fi
-
-            - name: Check latest version
-              id: checkver
-              run: |
-                LATEST_VERSION=$(curl -fsL https://dl.ferron.sh/latest2.ferron)
-                echo "Latest version: $LATEST_VERSION"
-                CURRENT_VERSION=$(grep -oP 'pkgver=\K[^\s]+' packages/ferronweb/PKGBUILD)
-                echo "Current version: $CURRENT_VERSION"
-                echo "LATEST_VERSION=$LATEST_VERSION" >> $GITHUB_ENV
-                echo "CURRENT_VERSION=$CURRENT_VERSION" >> $GITHUB_ENV
-                if [ "$LATEST_VERSION" != "$CURRENT_VERSION" ]; then
-                    echo "UPDATENEEDED=true" >> $GITHUB_ENV
-                else
-                    echo "UPDATENEEDED=false" >> $GITHUB_ENV
-                fi
-
-            - name: Install makepkg
-              if: env.UPDATENEEDED == 'true' || env.MANUALTRIG == 'true'
-              run: |
-                sudo apt-get -q -y install --no-install-recommends git pkg-config meson gcc libtool libgpgme-dev libarchive-dev ninja-build libcurl4-openssl-dev libssl-dev curl gettext python3 python3-setuptools dash gawk ca-certificates fakeroot fakechroot libarchive-tools
-                sudo mkdir -p /usr/local/meson
-                sudo git clone --depth=1 https://github.com/mesonbuild/meson.git /usr/local/meson
-                [ -f /usr/bin/meson ] && {
-                    mver=$(/usr/bin/meson --version)
-                    sudo mv /usr/bin/meson /usr/bin/meson-${mver}
-                }
-                if [ -f /usr/local/meson/meson.py ]; then
-                    sudo ln -s /usr/local/meson/meson.py /usr/bin/meson
-                else
-                    echo "ERROR: cannot locate /usr/local/meson/meson.py"
-                    exit 1
-                fi
-                git clone --depth=1 https://gitlab.archlinux.org/pacman/pacman.git
-                cd pacman
-                meson setup -Ddoc=disabled build
-                ninja -C build
-                [ -d build ] || {
-                    echo "Directory pacman/build does not exist. Exiting."
-                    exit 1
-                }
-                cd build
-                grep mirror scripts/libmakepkg/source/git.sh > /dev/null && {
-                    cat scripts/libmakepkg/source/git.sh | sed -e "s/---mirror//" > /tmp/git$$
-                    cp /tmp/git$$ scripts/libmakepkg/source/git.sh
-                    rm -f /tmp/git$$
-                }
-                sudo meson install --no-rebuild --quiet
-                cd ../..
-                sudo rm -rf ./pacman
-
-            - name: Update PKGBUILDs for all architectures
-              if: env.UPDATENEEDED == 'true' || env.MANUALTRIG == 'true'
-              run: |
-                echo "Updating from version $CURRENT_VERSION to $LATEST_VERSION"
-                sed -i "s/^pkgver=.*\$/pkgver=$LATEST_VERSION/" packages/ferronweb-bin/PKGBUILD
-                sed -i "s/^pkgver=.*\$/pkgver=$LATEST_VERSION/" packages/ferronweb/PKGBUILD
-
-                # pkgver bumps the source checksum too, the tarball changes with the tag
-                SRCSUM=$(curl -fsSL "https://github.com/ferronweb/ferron/archive/refs/tags/$LATEST_VERSION.tar.gz" | sha256sum | cut -d ' ' -f 1)
-                sed -i "s/^sha256sums=.*\$/sha256sums=('$SRCSUM')/" packages/ferronweb/PKGBUILD
-
-                for PKG_ARCH in x86_64 i686 armv7h aarch64 riscv64; do
-                    case "$PKG_ARCH" in
-                        armv7h) SRC_ARCH='armv7'; ABI='eabihf'; KEY='armv7' ;;
-                        riscv64) SRC_ARCH='riscv64gc'; ABI=''; KEY='riscv64' ;;
-                        *) SRC_ARCH="$PKG_ARCH"; ABI=''; KEY="$PKG_ARCH" ;;
-                    esac
-                    echo "Processing $PKG_ARCH (upstream $SRC_ARCH, checksum key $KEY)"
-                    FILE_NAME="ferron-$LATEST_VERSION-$SRC_ARCH-unknown-linux-gnu${ABI}.zip"
-                    URL="https://dl.ferron.sh/$LATEST_VERSION/$FILE_NAME"
-                    echo "Downloading: $URL"
-                    curl -fsSL "$URL" -o "$FILE_NAME" || {
-                        echo "ERROR: Missing upstream build for $SRC_ARCH"
-                        exit 1
-                    }
-                    CHECKSUM=$(sha256sum "$FILE_NAME" | cut -d ' ' -f 1)
-                    echo "Checksum for $KEY: $CHECKSUM"
-                    sed -i "s/^sha256sums_$KEY=.*\$/sha256sums_$KEY='$CHECKSUM'/" packages/ferronweb-bin/PKGBUILD
+                for dir in artifacts/pkg-*; do
+                    pkg=$(basename "$dir" | sed 's/^pkg-//')
+                    echo "Applying $pkg"
+                    cp -r "$dir"/. "packages/$pkg"/
                 done
-                cat packages/ferronweb-bin/PKGBUILD
-                cat packages/ferronweb/PKGBUILD
 
-            - name: Commit and push changes to GitHub
-              if: env.UPDATENEEDED == 'true' || env.MANUALTRIG == 'true'
+            - name: Commit and push to GitHub
               run: |
                 git config --global init.defaultBranch master
                 git config --local user.email "action@github.com"
                 git config --local user.name "GitHub Action"
                 git add packages
-                git diff --cached --quiet || git commit -m "Update to version $LATEST_VERSION"
-                git push -u origin master || echo "Nothing to push"
+                git diff --cached --quiet && { echo "Nothing to commit"; exit 0; }
+                git commit -m "Update packages"
+                git push origin master
 
-            - name: Publish to AUR
-              if: env.UPDATENEEDED == 'true' || env.MANUALTRIG == 'true'
+            - name: Set up SSH for AUR
               env:
                 AURSSHKEY: ${{ secrets.AURSSHKEY }}
                 AURUSER: 'LunarN0v4'
               run: |
-                git config --global init.defaultBranch master
                 mkdir -p ~/.ssh
                 echo "$AURSSHKEY" > ~/.ssh/aur_key
                 chmod 600 ~/.ssh/aur_key
@@ -131,16 +168,20 @@ jobs:
                 EOF
                 ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
 
-                for PKG in ferronweb ferronweb-bin ferronweb-git; do
+            - name: Publish to AUR
+              env:
+                AURUSER: 'LunarN0v4'
+              run: |
+                for PKG in ferron ferron-rc ferron-git ferronweb; do
                     echo "Publishing $PKG"
-                    git clone ssh://aur@aur.archlinux.org/$PKG.git aur-$PKG
-                    cd aur-$PKG
-                    cp ../packages/$PKG/PKGBUILD ../packages/$PKG/ferron.install ./
-                    makepkg --printsrcinfo > .SRCINFO
+                    git clone "ssh://aur@aur.archlinux.org/$PKG.git" "aur-$PKG"
+                    cd "aur-$PKG"
+                    cp "../packages/$PKG/PKGBUILD" "../packages/$PKG"/*.install ./
+                    makepkg --printsrcinfo > .SRCINFO 2>/dev/null || true
                     git config --local user.email "action@github.com"
                     git config --local user.name "GitHub Action"
-                    git add PKGBUILD ferron.install .SRCINFO
-                    git diff --cached --quiet || git commit -m "Update to version $LATEST_VERSION"
-                    git push -u origin master || echo "Nothing to push for $PKG"
+                    git add PKGBUILD *.install .SRCINFO 2>/dev/null
+                    git diff --cached --quiet || git commit -m "Update package"
+                    git push origin master || echo "Nothing to push for $PKG"
                     cd ..
                 done

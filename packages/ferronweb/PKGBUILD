@@ -1,44 +1,61 @@
+# Maintainer: Aria Arctic <aria@zeusteam.dev>
+# Contributor: Rowan <rowan@zeusteam.dev>
 pkgname=ferronweb
 pkgver=2.8.1
 pkgrel=1
-pkgdesc='A fast, modern web server written in Rust'
+pkgdesc='A fast, modern web server written in Rust (prebuilt binaries)'
 arch=('x86_64' 'i686' 'armv7h' 'aarch64' 'riscv64')
 url='https://ferron.sh'
 license=('MIT')
 depends=('gcc-libs' 'glibc' 'ca-certificates')
-makedepends=('cargo' 'git')
 provides=("ferron=$pkgver")
-conflicts=('ferron' 'ferronweb-bin' 'ferronweb-git')
+conflicts=('ferron' 'ferron-git' 'ferron-rc' 'ferron-bin' 'ferronweb-bin' 'ferronweb-git')
 backup=('etc/ferron.kdl')
 install=ferron.install
-source=("$pkgname-$pkgver.tar.gz::https://github.com/ferronweb/ferron/archive/refs/tags/$pkgver.tar.gz")
-sha256sums=('32354ffed4fbe8caede924d420e6a7ac84127f264c47e1e738b462d9479c0680')
+options=('!strip')
 
-prepare() {
-    cd "$srcdir/ferron-$pkgver"
-    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
-}
+# upstream names riscv64 riscv64gc and armv7 armv7 with an eabihf suffix
+case "$CARCH" in
+    x86_64) _arch='x86_64' ; _abi='' ;;
+    i686) _arch='i686' ; _abi='' ;;
+    armv7h) _arch='armv7' ; _abi='eabihf' ;;
+    aarch64) _arch='aarch64' ; _abi='' ;;
+    riscv64) _arch='riscv64gc' ; _abi='' ;;
+    *) error "Unsupported architecture: $CARCH"; exit 1 ;;
+esac
+_archive="ferron-$pkgver-$_arch-unknown-linux-gnu${_abi}.zip"
+source=("$_archive::https://dl.ferron.sh/$pkgver/$_archive"
+        "LICENSE::https://github.com/ferronweb/ferron/raw/$pkgver/LICENSE")
+sha256sums_x86_64=('3cf41cb1758c9fc653354a7fa5be2ca88a10a03a764cd82df67545216a3c5302')
+sha256sums_i686=('f6143583f9b78c3e9fb75c09844fb87eca2f1173c91230f87ee63f950d3432d4')
+sha256sums_armv7=('d704a2148eb3c6b4e340534b4de02a4ef396969474fe347a1d075daa62cb410d')
+sha256sums_aarch64=('d4b5174146cbbd57a83f61b52dc2f969c5afbcaeb212531416ae7d5aa9769d07')
+sha256sums_riscv64=('a29e9cb38b4d5245dcecdd64cd035c50f9ef7b96efb617eab2d3caa2ee9804e0')
+sha256sums_LICENSE=('c1db5c351e357ea68362c01faff8dc046c59e1d7466317f64482c2a6d3e6a695')
 
-build() {
-    cd "$srcdir/ferron-$pkgver"
-    export CARGO_TARGET_DIR="$srcdir/target"
-    cargo build --release --locked --workspace
+check() {
+    cd "$srcdir"
+    # 2.x has no validate subcommand, so check the binary reports the tag
+    local version
+    version=$(./ferron --version)
+    printf '%s\n' "${version%%$'\n'*}" | grep -xF "Ferron $pkgver"
 }
 
 package() {
-    cd "$srcdir/ferron-$pkgver"
+    cd "$srcdir"
     install -dm755 "$pkgdir/var/log/ferron"
     install -dm755 "$pkgdir/var/www/ferron"
     install -dm755 "$pkgdir/etc"
     install -dm755 "$pkgdir/usr/lib/systemd/system"
     install -dm755 "$pkgdir/usr/lib/tmpfiles.d"
     install -dm755 "$pkgdir/usr/lib/sysusers.d"
-    install -Dm755 "$srcdir/target/release/ferron" "$pkgdir/usr/bin/ferron"
-    install -Dm755 "$srcdir/target/release/ferron-passwd" "$pkgdir/usr/bin/ferron-passwd"
-    install -Dm755 "$srcdir/target/release/ferron-yaml2kdl" "$pkgdir/usr/bin/ferron-yaml2kdl"
-    install -Dm755 "$srcdir/target/release/ferron-precompress" "$pkgdir/usr/bin/ferron-precompress"
-    install -Dm644 "$srcdir/ferron-$pkgver/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     install -dm755 "$pkgdir/usr/share/ferron"
+    install -dm755 "$pkgdir/usr/share/doc/$pkgname"
+    install -Dm755 ferron "$pkgdir/usr/bin/ferron"
+    for binary in ferron-passwd ferron-yaml2kdl ferron-precompress; do
+        [[ -f "$binary" ]] && install -Dm755 "$binary" "$pkgdir/usr/bin/$binary"
+    done
+    install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     cp -r wwwroot "$pkgdir/usr/share/ferron/wwwroot"
     cat > "$pkgdir/etc/ferron.kdl" << 'EOF'
 // Global-only configuration
@@ -75,6 +92,6 @@ EOF
 d /var/log/ferron 0755 ferron ferron -
 EOF
     cat > "$pkgdir/usr/lib/sysusers.d/ferron.conf" << 'EOF'
-u ferron - "Ferron web server" /nonexistent /usr/sbin/nologin
+u ferron - "Ferron web server" /var/lib/ferron
 EOF
 }
