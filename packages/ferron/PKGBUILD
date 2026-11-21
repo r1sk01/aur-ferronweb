@@ -39,6 +39,7 @@ package() {
     cd "$srcdir/ferron-$pkgver"
     install -dm755 "$pkgdir/var/log/ferron"
     install -dm755 "$pkgdir/var/www/ferron"
+    install -dm755 "$pkgdir/var/lib/ferron"
     install -dm755 "$pkgdir/etc"
     install -dm755 "$pkgdir/usr/lib/systemd/system"
     install -dm755 "$pkgdir/usr/lib/tmpfiles.d"

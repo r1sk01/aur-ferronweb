@@ -210,6 +210,17 @@ jobs:
 
                 rm -rf "$SCRATCH" && mkdir -p "$SCRATCH"
                 cp -r "$PKG_DIR"/. "$SCRATCH"/
+
+                # makepkg --printsrcinfo does not run pkgver(), so a VCS package
+                # would publish the placeholder literal. Resolve it the way
+                # makepkg would and write it into the scratch copy.
+                if [ "${{ matrix.kind }}" = "git" ]; then
+                    ( cd "$SCRATCH" && source ./PKGBUILD >/dev/null 2>&1 && pkgver > /tmp/pkgver.txt )
+                    RESOLVED=$(cat /tmp/pkgver.txt)
+                    sed -i "s/^pkgver=.*\$/pkgver=$RESOLVED/" "$SCRATCH/PKGBUILD"
+                    echo "resolved pkgver=$RESOLVED"
+                fi
+
                 if [ "$(id -u)" = "0" ]; then
                     id builder > /dev/null 2>&1 || useradd -m builder
                     chown -R builder:builder "$SCRATCH"
