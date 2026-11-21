@@ -238,6 +238,9 @@ jobs:
                 chmod 644 "$PKG_DIR/.SRCINFO"
 
             - name: Upload package
+              # unchanged packages have nothing to publish, and uploading them
+              # would make the publish step republish everything every run
+              if: steps.upd.outputs.changed == 'true'
               uses: actions/upload-artifact@v5
               with:
                 name: pkg-${{ matrix.pkg }}
@@ -289,27 +292,24 @@ jobs:
                 CHANGED=""
                 GITCHANGED=""
                 for dir in artifacts/pkg-*; do
+                    [ -d "$dir" ] || continue
                     pkg=$(basename "$dir" | sed 's/^pkg-//')
                     cp -r "$dir"/. "packages/$pkg"/
-                    # compare against HEAD without staging, so an ignored
-                    # .SRCINFO never ends up in the GitHub commit
+                    # every artifact is something the update jobs decided to
+                    # publish, so it goes to the AUR. Only what git sees as a
+                    # change is committed here, because .SRCINFO is gitignored
+                    # and an .SRCINFO-only change would otherwise be dropped.
+                    CHANGED="$CHANGED $pkg"
                     if ! git diff --quiet HEAD -- "packages/$pkg"; then
-                        CHANGED="$CHANGED $pkg"
                         GITCHANGED="$GITCHANGED $pkg"
                     fi
                 done
-
-                # the update jobs already decided what changed, including
-                # packages that only differ from the AUR copy, so every
-                # artifact here is something that has to be published
 
                 if [ -z "$CHANGED" ]; then
                     echo "No package changed, nothing to publish"
                     exit 0
                 fi
 
-                # only commit to GitHub what actually differs; a package that
-                # is merely new on the AUR has nothing to commit here
                 if [ -n "$GITCHANGED" ]; then
                     git add packages
                     git commit -m "Update packages:$GITCHANGED"
