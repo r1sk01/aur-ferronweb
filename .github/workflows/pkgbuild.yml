@@ -94,27 +94,61 @@ jobs:
               run: |
                 PKG_DIR="packages/${{ matrix.pkg }}"
                 TARGET="${{ steps.target.outputs.version }}"
+                PKG="${{ matrix.pkg }}"
                 CURRENT=$(grep -oP 'pkgver=\K[^\s]+' "$PKG_DIR/PKGBUILD")
                 echo "current=$CURRENT target=$TARGET"
 
-                # A VCS package carries no fixed version, so there is nothing to
-                # bump on a schedule. It is republished only when its PKGBUILD
-                # changes in this repository.
+                # true when the AUR copy of the PKGBUILD already matches ours
+                aur_matches() {
+                    local remote
+                    remote=$(curl -fsSL "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=$PKG" 2>/dev/null)
+                    [ "$remote" = "$(cat "$PKG_DIR/PKGBUILD")" ]
+                }
+
+                # users only rebuild when pkgrel moves, so any change that does
+                # not come from upstream has to bump it
+                bump_pkgrel() {
+                    local rel
+                    rel=$(grep -oP 'pkgrel=\K[0-9]+' "$PKG_DIR/PKGBUILD")
+                    rel=$((rel + 1))
+                    sed -i "s/^pkgrel=.*\$/pkgrel=$rel/" "$PKG_DIR/PKGBUILD"
+                    echo "pkgrel=$rel"
+                }
+
+                # a VCS package has no upstream version to follow, so it moves
+                # only when its PKGBUILD differs from the AUR copy
                 if [ "${{ matrix.kind }}" = "git" ]; then
-                    echo "changed=false" >> $GITHUB_OUTPUT
+                    if aur_matches; then
+                        echo "changed=false" >> $GITHUB_OUTPUT
+                        exit 0
+                    fi
+                    bump_pkgrel
+                    echo "changed=true" >> $GITHUB_OUTPUT
                     exit 0
                 fi
 
-                # upstream reports the RC as 3.0.0-rc.11; pkgver may not hold a hyphen
+                # upstream reports the RC as 3.0.0-rc.11, and pkgver may not
+                # hold a hyphen
                 PKGVER="${TARGET//-/}"
                 echo "pkgver=$PKGVER"
 
                 if [ "$CURRENT" = "$PKGVER" ]; then
-                    echo "changed=false" >> $GITHUB_OUTPUT
+                    # same upstream version, so only a packaging change can be
+                    # pending. Compare against the AUR, not HEAD, because a
+                    # packaging change already committed here still has to ship.
+                    if aur_matches; then
+                        echo "changed=false" >> $GITHUB_OUTPUT
+                        exit 0
+                    fi
+                    bump_pkgrel
+                    echo "packaging differs on the AUR"
+                    echo "changed=true" >> $GITHUB_OUTPUT
                     exit 0
                 fi
 
+                echo "upstream $CURRENT -> $PKGVER"
                 sed -i "s/^pkgver=.*\$/pkgver=$PKGVER/" "$PKG_DIR/PKGBUILD"
+                # a new upstream version resets the packaging release
                 sed -i 's/^pkgrel=.*$/pkgrel=1/' "$PKG_DIR/PKGBUILD"
                 echo "changed=true" >> $GITHUB_OUTPUT
 
