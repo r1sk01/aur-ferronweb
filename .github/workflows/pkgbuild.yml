@@ -100,7 +100,12 @@ jobs:
                         echo "  $KEY: $CHECKSUM"
                         sed -i "s/^sha256sums_$KEY=.*\$/sha256sums_$KEY='$CHECKSUM'/" "$PKG_DIR/PKGBUILD"
                     done
-                    LICENSE_SUM=$(curl -fsSL --retry 5 --retry-all-errors "https://github.com/ferronweb/ferron/raw/$TARGET/LICENSE" | sha256sum | cut -d ' ' -f 1)
+                    # pin LICENSE to the tagged commit, matching _commit in the PKGBUILD
+                    COMMIT=$(curl -fsSL --retry 5 --retry-all-errors "https://api.github.com/repos/ferronweb/ferron/git/ref/tags/$TARGET" | grep -oP '"sha":\s*"\K[a-f0-9]+' | head -1)
+                    [ -n "$COMMIT" ] || { echo "ERROR: cannot resolve tag $TARGET"; exit 1; }
+                    echo "  commit: $COMMIT"
+                    sed -i "s/^_commit=.*\$/_commit=$COMMIT/" "$PKG_DIR/PKGBUILD"
+                    LICENSE_SUM=$(curl -fsSL --retry 5 --retry-all-errors "https://raw.githubusercontent.com/ferronweb/ferron/$COMMIT/LICENSE" | sha256sum | cut -d ' ' -f 1)
                     sed -i "s/^sha256sums_LICENSE=.*\$/sha256sums_LICENSE='$LICENSE_SUM'/" "$PKG_DIR/PKGBUILD"
                 else
                     TAG="$TARGET"
