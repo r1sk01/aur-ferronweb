@@ -189,7 +189,12 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                 name: pkg-${{ matrix.pkg }}
-                path: packages/${{ matrix.pkg }}
+                # .SRCINFO is a dotfile and gitignored, so name it explicitly
+                path: |
+                    packages/${{ matrix.pkg }}/PKGBUILD
+                    packages/${{ matrix.pkg }}/*.install
+                    packages/${{ matrix.pkg }}/.SRCINFO
+                if-no-files-found: error
 
     publish:
         needs: update
@@ -231,9 +236,9 @@ jobs:
                 for dir in artifacts/pkg-*; do
                     pkg=$(basename "$dir" | sed 's/^pkg-//')
                     cp -r "$dir"/. "packages/$pkg"/
-                    # stage first, then ask git what actually differs
-                    git add -f "packages/$pkg"
-                    if ! git diff --cached --quiet -- "packages/$pkg"; then
+                    # compare against HEAD without staging, so an ignored
+                    # .SRCINFO never ends up in the GitHub commit
+                    if ! git diff --quiet HEAD -- "packages/$pkg"; then
                         CHANGED="$CHANGED $pkg"
                     fi
                 done
@@ -251,8 +256,12 @@ jobs:
                     echo "Publishing $pkg"
                     git clone "ssh://aur@aur.archlinux.org/$pkg.git" "aur-$pkg"
                     cd "aur-$pkg"
+                    # the AUR repo carries only PKGBUILD, the .install script and
+                    # a generated .SRCINFO, nothing else from this repository
                     cp "../packages/$pkg/PKGBUILD" "../packages/$pkg"/*.install ./
-                    git add PKGBUILD *.install .SRCINFO 2>/dev/null
+                    cp "../packages/$pkg/.SRCINFO" ./
+                    test -s .SRCINFO || { echo "ERROR: no .SRCINFO for $pkg"; exit 1; }
+                    git add PKGBUILD *.install .SRCINFO
                     git config --local user.email "action@github.com"
                     git config --local user.name "GitHub Action"
                     if git diff --cached --quiet; then
