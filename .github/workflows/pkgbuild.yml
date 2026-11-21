@@ -236,12 +236,26 @@ jobs:
                 git config --local user.name "GitHub Action"
 
                 CHANGED=""
+                GITCHANGED=""
                 for dir in artifacts/pkg-*; do
                     pkg=$(basename "$dir" | sed 's/^pkg-//')
                     cp -r "$dir"/. "packages/$pkg"/
                     # compare against HEAD without staging, so an ignored
                     # .SRCINFO never ends up in the GitHub commit
                     if ! git diff --quiet HEAD -- "packages/$pkg"; then
+                        CHANGED="$CHANGED $pkg"
+                        GITCHANGED="$GITCHANGED $pkg"
+                    fi
+                done
+
+                # a package with no AUR repo yet still has to be created, so
+                # treat "not on the AUR" as a change of its own
+                for dir in artifacts/pkg-*; do
+                    pkg=$(basename "$dir" | sed 's/^pkg-//')
+                    case " $CHANGED " in *" $pkg "*) continue ;; esac
+                    if ! git ls-remote --exit-code \
+                        "ssh://aur@aur.archlinux.org/$pkg.git" HEAD > /dev/null 2>&1; then
+                        echo "$pkg has no AUR repo yet, will be created"
                         CHANGED="$CHANGED $pkg"
                     fi
                 done
@@ -251,14 +265,27 @@ jobs:
                     exit 0
                 fi
 
-                git add packages
-                git commit -m "Update packages: $CHANGED"
-                git push origin master
+                # only commit to GitHub what actually differs; a package that
+                # is merely new on the AUR has nothing to commit here
+                if [ -n "$GITCHANGED" ]; then
+                    git add packages
+                    git commit -m "Update packages:$GITCHANGED"
+                    git push origin master
+                fi
 
                 for pkg in $CHANGED; do
                     echo "Publishing $pkg"
-                    git clone "ssh://aur@aur.archlinux.org/$pkg.git" "aur-$pkg"
+                    # the AUR creates the repo on first push, so an empty or
+                    # missing remote is the normal case for a new package
+                    git clone "ssh://aur@aur.archlinux.org/$pkg.git" "aur-$pkg" 2>/dev/null || {
+                        echo "  no AUR repo for $pkg, initialising"
+                        mkdir -p "aur-$pkg"
+                        git -C "aur-$pkg" init -q
+                        git -C "aur-$pkg" remote add origin "ssh://aur@aur.archlinux.org/$pkg.git"
+                    }
                     cd "aur-$pkg"
+                    # the AUR only accepts pushes to master
+                    git symbolic-ref HEAD refs/heads/master
                     # the AUR repo carries only PKGBUILD, the .install script and
                     # a generated .SRCINFO, nothing else from this repository
                     cp "../packages/$pkg/PKGBUILD" "../packages/$pkg"/*.install ./
