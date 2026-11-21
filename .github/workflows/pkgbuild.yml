@@ -43,21 +43,31 @@ jobs:
 
             - name: Install makepkg
               run: |
-                sudo apt-get update
-                sudo apt-get -q -y install --no-install-recommends \
-                    git pkg-config meson gcc libtool libgpgme-dev libarchive-dev \
-                    ninja-build libcurl4-openssl-dev libssl-dev curl gettext \
-                    python3 python3-setuptools dash gawk ca-certificates \
-                    fakeroot fakechroot libarchive-tools
+                # matrix jobs may share one machine, so serialise on dpkg's lock
+                sudo flock /var/lib/dpkg/lock-frontend bash -c '
+                    apt-get update
+                    apt-get -q -y install --no-install-recommends \
+                        git pkg-config meson gcc libtool libgpgme-dev libarchive-dev \
+                        ninja-build libcurl4-openssl-dev libssl-dev curl gettext \
+                        python3 python3-setuptools dash gawk ca-certificates \
+                        fakeroot fakechroot libarchive-tools
+                '
                 sudo mkdir -p /usr/local/meson
-                sudo git clone --depth=1 https://github.com/mesonbuild/meson.git /usr/local/meson
+                # each job may run concurrently in one workspace, so every
+                # shared step has to tolerate another job having done it
+                if [ ! -f /usr/local/meson/meson.py ]; then
+                    sudo git clone --depth=1 https://github.com/mesonbuild/meson.git /usr/local/meson
+                fi
                 if [ -f /usr/bin/meson ]; then
                     mver=$(/usr/bin/meson --version)
                     sudo mv /usr/bin/meson /usr/bin/meson-${mver}
                 fi
-                sudo ln -s /usr/local/meson/meson.py /usr/bin/meson
-                git clone --depth=1 https://gitlab.archlinux.org/pacman/pacman.git
-                cd pacman
+                sudo ln -sf /usr/local/meson/meson.py /usr/bin/meson
+                # a unique dir, so concurrent matrix jobs sharing a workspace
+                # cannot collide on the clone
+                work=$(mktemp -d)
+                git clone --depth=1 https://gitlab.archlinux.org/pacman/pacman.git "$work/pacman"
+                cd "$work/pacman"
                 meson setup -Ddoc=disabled build
                 ninja -C build
                 cd build
@@ -67,7 +77,8 @@ jobs:
                     rm -f /tmp/git$$
                 }
                 sudo meson install --no-rebuild --quiet
-                sudo rm -rf "$GITHUB_WORKSPACE/pacman"
+                cd /
+                sudo rm -rf "$work"
 
             - name: Determine target version
               id: target
