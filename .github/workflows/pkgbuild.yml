@@ -215,7 +215,12 @@ jobs:
                 # would publish the placeholder literal. Resolve it the way
                 # makepkg would and write it into the scratch copy.
                 if [ "${{ matrix.kind }}" = "git" ]; then
-                    ( cd "$SCRATCH" && source ./PKGBUILD >/dev/null 2>&1 && pkgver > /tmp/pkgver.txt )
+                    # pkgver() needs the repo and its tags, so give it a shallow
+                    # clone to describe. The build itself uses the PKGBUILD source.
+                    ( cd "$SCRATCH" && srcdir="$SCRATCH/src" && mkdir -p "$srcdir" \
+                        && git clone -q --depth=200 --branch develop-3.x \
+                            https://github.com/ferronweb/ferron.git "$srcdir/ferron" \
+                        && source ./PKGBUILD >/dev/null 2>&1 && pkgver > /tmp/pkgver.txt )
                     RESOLVED=$(cat /tmp/pkgver.txt)
                     sed -i "s/^pkgver=.*\$/pkgver=$RESOLVED/" "$SCRATCH/PKGBUILD"
                     echo "resolved pkgver=$RESOLVED"
