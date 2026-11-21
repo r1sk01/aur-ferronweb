@@ -41,6 +41,34 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v5
 
+            - name: Install makepkg
+              run: |
+                sudo apt-get update
+                sudo apt-get -q -y install --no-install-recommends \
+                    git pkg-config meson gcc libtool libgpgme-dev libarchive-dev \
+                    ninja-build libcurl4-openssl-dev libssl-dev curl gettext \
+                    python3 python3-setuptools dash gawk ca-certificates \
+                    fakeroot fakechroot libarchive-tools
+                sudo mkdir -p /usr/local/meson
+                sudo git clone --depth=1 https://github.com/mesonbuild/meson.git /usr/local/meson
+                if [ -f /usr/bin/meson ]; then
+                    mver=$(/usr/bin/meson --version)
+                    sudo mv /usr/bin/meson /usr/bin/meson-${mver}
+                fi
+                sudo ln -s /usr/local/meson/meson.py /usr/bin/meson
+                git clone --depth=1 https://gitlab.archlinux.org/pacman/pacman.git
+                cd pacman
+                meson setup -Ddoc=disabled build
+                ninja -C build
+                cd build
+                grep mirror scripts/libmakepkg/source/git.sh > /dev/null && {
+                    cat scripts/libmakepkg/source/git.sh | sed -e "s/---mirror//" > /tmp/git$$
+                    cp /tmp/git$$ scripts/libmakepkg/source/git.sh
+                    rm -f /tmp/git$$
+                }
+                sudo meson install --no-rebuild --quiet
+                sudo rm -rf "$GITHUB_WORKSPACE/pacman"
+
             - name: Determine target version
               id: target
               run: |
@@ -66,12 +94,16 @@ jobs:
                     exit 0
                 fi
 
-                if [ "$CURRENT" = "$TARGET" ]; then
+                # upstream reports the RC as 3.0.0-rc.11; pkgver may not hold a hyphen
+                PKGVER="${TARGET//-/}"
+                echo "pkgver=$PKGVER"
+
+                if [ "$CURRENT" = "$PKGVER" ]; then
                     echo "changed=false" >> $GITHUB_OUTPUT
                     exit 0
                 fi
 
-                sed -i "s/^pkgver=.*\$/pkgver=$TARGET/" "$PKG_DIR/PKGBUILD"
+                sed -i "s/^pkgver=.*\$/pkgver=$PKGVER/" "$PKG_DIR/PKGBUILD"
                 sed -i 's/^pkgrel=.*$/pkgrel=1/' "$PKG_DIR/PKGBUILD"
                 echo "changed=true" >> $GITHUB_OUTPUT
 
@@ -105,25 +137,42 @@ jobs:
                     [ -n "$COMMIT" ] || { echo "ERROR: cannot resolve tag $TARGET"; exit 1; }
                     echo "  commit: $COMMIT"
                     sed -i "s/^_commit=.*\$/_commit=$COMMIT/" "$PKG_DIR/PKGBUILD"
-                    LICENSE_SUM=$(curl -fsSL --retry 5 --retry-all-errors "https://raw.githubusercontent.com/ferronweb/ferron/$COMMIT/LICENSE" | sha256sum | cut -d ' ' -f 1)
+                    curl -fsSL --retry 5 --retry-all-errors "https://raw.githubusercontent.com/ferronweb/ferron/$COMMIT/LICENSE" -o /tmp/LICENSE \
+                        || { echo "ERROR: cannot fetch LICENSE for $COMMIT"; exit 1; }
+                    LICENSE_SUM=$(sha256sum /tmp/LICENSE | cut -d ' ' -f 1)
                     sed -i "s/^sha256sums_LICENSE=.*\$/sha256sums_LICENSE='$LICENSE_SUM'/" "$PKG_DIR/PKGBUILD"
                 else
-                    TAG="$TARGET"
-                    # upstream tags the RC as 3.0.0-rc.11 while pkgver must be 3.0.0rc.11
-                    if [[ "$PKG" == "ferron-rc" ]]; then
-                        TAG="${TARGET/rc./-rc.}"
-                    fi
-                    URL="https://github.com/ferronweb/ferron/archive/refs/tags/$TAG.tar.gz"
+                    # TARGET is already the upstream tag: 2.8.1, or 3.0.0-rc.11 for an RC
+                    URL="https://github.com/ferronweb/ferron/archive/refs/tags/$TARGET.tar.gz"
                     echo "Downloading $URL"
-                    SUM=$(curl -fsSL --retry 5 --retry-all-errors "$URL" | sha256sum | cut -d ' ' -f 1)
+                    curl -fsSL --retry 5 --retry-all-errors "$URL" -o /tmp/tarball \
+                        || { echo "ERROR: cannot fetch $URL"; exit 1; }
+                    SUM=$(sha256sum /tmp/tarball | cut -d ' ' -f 1)
                     echo "  tarball: $SUM"
                     sed -i "s/^sha256sums=.*\$/sha256sums=('$SUM')/" "$PKG_DIR/PKGBUILD"
                 fi
 
             - name: Regenerate .SRCINFO
               run: |
-                cd "packages/${{ matrix.pkg }}"
-                CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO
+                # makepkg refuses to run as root, and act's container is root.
+                # Work in a scratch copy so a bind-mounted workspace keeps its
+                # ownership, and only the generated .SRCINFO is copied back.
+                PKG_DIR="packages/${{ matrix.pkg }}"
+                rm -rf /tmp/srccheck && mkdir -p /tmp/srccheck
+                cp -r "$PKG_DIR"/. /tmp/srccheck/
+                if [ "$(id -u)" = "0" ]; then
+                    id builder > /dev/null 2>&1 || useradd -m builder
+                    chown -R builder:builder /tmp/srccheck
+                    runuser -u builder -- bash -c '
+                        cd /tmp/srccheck &&
+                        CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO
+                    '
+                else
+                    cd /tmp/srccheck
+                    CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO
+                fi
+                test -s /tmp/srccheck/.SRCINFO
+                cp /tmp/srccheck/.SRCINFO "$PKG_DIR/.SRCINFO"
 
             - name: Upload package
               uses: actions/upload-artifact@v4

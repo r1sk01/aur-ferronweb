@@ -1,6 +1,7 @@
 /src
 /pkg
 ferron*.zip
-ferronweb*.tar.zst
+ferron*.tar.zst
 .secrets
 install.sh
+.SRCINFO
