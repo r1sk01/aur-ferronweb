@@ -248,13 +248,27 @@ jobs:
                     fi
                 done
 
-                # a package with no AUR repo yet still has to be created, so
-                # treat "not on the AUR" as a change of its own
+                # a package whose AUR files differ from what we just built has
+                # to be republished even when this repository has not changed,
+                # and one with no AUR repo yet has to be created
                 for dir in artifacts/pkg-*; do
                     pkg=$(basename "$dir" | sed 's/^pkg-//')
                     case " $CHANGED " in *" $pkg "*) continue ;; esac
-                    if ! git ls-remote --exit-code \
+                    if git ls-remote --exit-code \
                         "ssh://aur@aur.archlinux.org/$pkg.git" HEAD > /dev/null 2>&1; then
+                        # compare each file the AUR tracks against ours
+                        differs=""
+                        for f in PKGBUILD $(cd "packages/$pkg" && ls *.install 2>/dev/null) .SRCINFO; do
+                            remote=$(curl -fsSL "https://aur.archlinux.org/cgit/aur.git/plain/$f?h=$pkg" 2>/dev/null)
+                            if [ "$remote" != "$(cat "packages/$pkg/$f")" ]; then
+                                differs="$differs $f"
+                            fi
+                        done
+                        if [ -n "$differs" ]; then
+                            echo "$pkg differs on the AUR ($differs ), will republish"
+                            CHANGED="$CHANGED $pkg"
+                        fi
+                    else
                         echo "$pkg has no AUR repo yet, will be created"
                         CHANGED="$CHANGED $pkg"
                     fi
