@@ -184,12 +184,15 @@ jobs:
                 fi
                 test -s /tmp/srccheck/.SRCINFO
                 cp /tmp/srccheck/.SRCINFO "$PKG_DIR/.SRCINFO"
+                chmod 644 "$PKG_DIR/.SRCINFO"
 
             - name: Upload package
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v5
               with:
                 name: pkg-${{ matrix.pkg }}
-                # .SRCINFO is a dotfile and gitignored, so name it explicitly
+                # .SRCINFO is a dotfile and gitignored; v4 silently drops
+                # hidden files, so they have to be asked for
+                include-hidden-files: true
                 path: |
                     packages/${{ matrix.pkg }}/PKGBUILD
                     packages/${{ matrix.pkg }}/*.install
@@ -204,7 +207,7 @@ jobs:
               uses: actions/checkout@v5
 
             - name: Download packages
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v5
               with:
                 path: artifacts
                 pattern: pkg-*
