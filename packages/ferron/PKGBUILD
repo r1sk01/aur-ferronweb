@@ -10,7 +10,6 @@ license=('MIT')
 depends=('gcc-libs' 'glibc' 'ca-certificates')
 makedepends=('cargo' 'git')
 conflicts=('ferron-git' 'ferron-rc' 'ferronweb' 'ferron-bin' 'ferronweb-bin' 'ferronweb-git')
-backup=('etc/ferron.kdl')
 install=ferron.install
 source=("$pkgname-$pkgver.tar.gz::https://github.com/ferronweb/ferron/archive/refs/tags/$pkgver.tar.gz")
 sha256sums=('32354ffed4fbe8caede924d420e6a7ac84127f264c47e1e738b462d9479c0680')
@@ -46,7 +45,9 @@ package() {
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     cp -r wwwroot "$pkgdir/usr/share/ferron/wwwroot"
     cp -r docs "$pkgdir/usr/share/doc/$pkgname/html"
-    cat > "$pkgdir/etc/ferron.kdl" << 'EOF'
+    # seeded into /etc by the install script, so an upgrade can tell a stock
+    # config from one the user has edited
+    cat > "$pkgdir/usr/share/ferron/ferron.kdl.default" << 'EOF'
 // Global-only configuration
 * {
     default_http_port 80

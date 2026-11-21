@@ -11,7 +11,6 @@ depends=('gcc-libs' 'glibc' 'ca-certificates')
 makedepends=('cargo' 'git')
 provides=("ferron=$pkgver")
 conflicts=('ferron' 'ferron-rc' 'ferronweb' 'ferron-bin' 'ferronweb-bin' 'ferronweb-git')
-backup=('etc/ferron/ferron.conf')
 install=ferron-git.install
 source=("git+https://github.com/ferronweb/ferron.git#branch=develop-3.x")
 sha256sums=('SKIP')
@@ -60,7 +59,7 @@ package() {
         echo "ERROR: $cfg no longer sets root /var/www/ferron, review the config before packaging"
         exit 1
     }
-    install -Dm644 "$cfg" "$pkgdir/etc/ferron/ferron.conf"
+    install -Dm644 "$cfg" "$pkgdir/usr/share/ferron/ferron.conf.default"
     cat > "$pkgdir/usr/lib/systemd/system/ferron.service" << 'EOF'
 [Unit]
 Description=Ferron web server

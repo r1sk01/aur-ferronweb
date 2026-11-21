@@ -11,7 +11,6 @@ depends=('gcc-libs' 'glibc' 'ca-certificates')
 makedepends=('cargo' 'git')
 provides=("ferron=$pkgver")
 conflicts=('ferron' 'ferron-git' 'ferronweb' 'ferron-bin' 'ferronweb-bin' 'ferronweb-git')
-backup=('etc/ferron/ferron.conf')
 install=ferron-rc.install
 source=("$pkgname-$pkgver.tar.gz::https://github.com/ferronweb/ferron/archive/refs/tags/3.0.0-rc.11.tar.gz")
 sha256sums=('55d536760efadd856bd81ceccd439e66be60c50a31046f96c3a2500735c9d268')
@@ -47,7 +46,8 @@ package() {
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     cp -r wwwroot "$pkgdir/usr/share/ferron/wwwroot"
     cp -r docs "$pkgdir/usr/share/doc/$pkgname/html"
-    # the packaged config is upstream's, with the webroot pointed at the Arch path
+    # the config is seeded into /etc by the install script, so that an upgrade
+    # can tell a stock config from one the user has edited
     local cfg="configs/ferron.pkgunix.conf"
     if [ ! -f "$cfg" ]; then
         echo "ERROR: $cfg missing, upstream may have renamed the packaged config"
@@ -57,7 +57,7 @@ package() {
         echo "ERROR: $cfg no longer sets root /var/www/ferron, review the config before packaging"
         exit 1
     }
-    install -Dm644 "$cfg" "$pkgdir/etc/ferron/ferron.conf"
+    install -Dm644 "$cfg" "$pkgdir/usr/share/ferron/ferron.conf.default"
     cat > "$pkgdir/usr/lib/systemd/system/ferron.service" << 'EOF'
 [Unit]
 Description=Ferron web server
