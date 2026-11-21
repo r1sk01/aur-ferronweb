@@ -58,8 +58,11 @@ jobs:
                 CURRENT=$(grep -oP 'pkgver=\K[^\s]+' "$PKG_DIR/PKGBUILD")
                 echo "current=$CURRENT target=$TARGET"
 
+                # A VCS package carries no fixed version, so there is nothing to
+                # bump on a schedule. It is republished only when its PKGBUILD
+                # changes in this repository.
                 if [ "${{ matrix.kind }}" = "git" ]; then
-                    echo "changed=true" >> $GITHUB_OUTPUT
+                    echo "changed=false" >> $GITHUB_OUTPUT
                     exit 0
                 fi
 
@@ -112,10 +115,12 @@ jobs:
                     sed -i "s/^sha256sums=.*\$/sha256sums=('$SUM')/" "$PKG_DIR/PKGBUILD"
                 fi
 
-                cd "$PKG_DIR" && CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO 2>/dev/null || true
+            - name: Regenerate .SRCINFO
+              run: |
+                cd "packages/${{ matrix.pkg }}"
+                CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO
 
-            - name: Upload updated package
-              if: steps.upd.outputs.changed == 'true'
+            - name: Upload package
               uses: actions/upload-artifact@v4
               with:
                 name: pkg-${{ matrix.pkg }}
@@ -123,35 +128,16 @@ jobs:
 
     publish:
         needs: update
-        if: always()
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
               uses: actions/checkout@v5
 
-            - name: Download all updated packages
+            - name: Download packages
               uses: actions/download-artifact@v4
               with:
                 path: artifacts
                 pattern: pkg-*
-
-            - name: Apply updates
-              run: |
-                for dir in artifacts/pkg-*; do
-                    pkg=$(basename "$dir" | sed 's/^pkg-//')
-                    echo "Applying $pkg"
-                    cp -r "$dir"/. "packages/$pkg"/
-                done
-
-            - name: Commit and push to GitHub
-              run: |
-                git config --global init.defaultBranch master
-                git config --local user.email "action@github.com"
-                git config --local user.name "GitHub Action"
-                git add packages
-                git diff --cached --quiet && { echo "Nothing to commit"; exit 0; }
-                git commit -m "Update packages"
-                git push origin master
 
             - name: Set up SSH for AUR
               env:
@@ -168,20 +154,47 @@ jobs:
                 EOF
                 ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
 
-            - name: Publish to AUR
+            - name: Apply, commit and publish changed packages
               env:
                 AURUSER: 'LunarN0v4'
               run: |
-                for PKG in ferron ferron-rc ferron-git ferronweb; do
-                    echo "Publishing $PKG"
-                    git clone "ssh://aur@aur.archlinux.org/$PKG.git" "aur-$PKG"
-                    cd "aur-$PKG"
-                    cp "../packages/$PKG/PKGBUILD" "../packages/$PKG"/*.install ./
-                    makepkg --printsrcinfo > .SRCINFO 2>/dev/null || true
+                git config --global init.defaultBranch master
+                git config --local user.email "action@github.com"
+                git config --local user.name "GitHub Action"
+
+                CHANGED=""
+                for dir in artifacts/pkg-*; do
+                    pkg=$(basename "$dir" | sed 's/^pkg-//')
+                    cp -r "$dir"/. "packages/$pkg"/
+                    # stage first, then ask git what actually differs
+                    git add -f "packages/$pkg"
+                    if ! git diff --cached --quiet -- "packages/$pkg"; then
+                        CHANGED="$CHANGED $pkg"
+                    fi
+                done
+
+                if [ -z "$CHANGED" ]; then
+                    echo "No package changed, nothing to publish"
+                    exit 0
+                fi
+
+                git add packages
+                git commit -m "Update packages: $CHANGED"
+                git push origin master
+
+                for pkg in $CHANGED; do
+                    echo "Publishing $pkg"
+                    git clone "ssh://aur@aur.archlinux.org/$pkg.git" "aur-$pkg"
+                    cd "aur-$pkg"
+                    cp "../packages/$pkg/PKGBUILD" "../packages/$pkg"/*.install ./
+                    git add PKGBUILD *.install .SRCINFO 2>/dev/null
                     git config --local user.email "action@github.com"
                     git config --local user.name "GitHub Action"
-                    git add PKGBUILD *.install .SRCINFO 2>/dev/null
-                    git diff --cached --quiet || git commit -m "Update package"
-                    git push origin master || echo "Nothing to push for $PKG"
+                    if git diff --cached --quiet; then
+                        echo "  $pkg already up to date on the AUR"
+                    else
+                        git commit -m "Update package"
+                        git push origin master
+                    fi
                     cd ..
                 done
