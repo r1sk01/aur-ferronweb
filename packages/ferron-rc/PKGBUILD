@@ -47,7 +47,17 @@ package() {
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     cp -r wwwroot "$pkgdir/usr/share/ferron/wwwroot"
     cp -r docs "$pkgdir/usr/share/doc/$pkgname/html"
-    install -Dm644 configs/ferron.pkgunix.conf "$pkgdir/etc/ferron/ferron.conf"
+    # the packaged config is upstream's, with the webroot pointed at the Arch path
+    local cfg="configs/ferron.pkgunix.conf"
+    if [ ! -f "$cfg" ]; then
+        echo "ERROR: $cfg missing, upstream may have renamed the packaged config"
+        exit 1
+    fi
+    grep -qxF '    root /var/www/ferron' "$cfg" || {
+        echo "ERROR: $cfg no longer sets root /var/www/ferron, review the config before packaging"
+        exit 1
+    }
+    install -Dm644 "$cfg" "$pkgdir/etc/ferron/ferron.conf"
     cat > "$pkgdir/usr/lib/systemd/system/ferron.service" << 'EOF'
 [Unit]
 Description=Ferron web server

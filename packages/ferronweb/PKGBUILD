@@ -55,8 +55,14 @@ package() {
     install -dm755 "$pkgdir/usr/share/ferron"
     install -dm755 "$pkgdir/usr/share/doc/$pkgname"
     install -Dm755 ferron "$pkgdir/usr/bin/ferron"
+    # the release zip is expected to carry these; fail rather than ship a partial package
     for binary in ferron-passwd ferron-yaml2kdl ferron-precompress; do
-        [[ -f "$binary" ]] && install -Dm755 "$binary" "$pkgdir/usr/bin/$binary"
+        if [ ! -f "$binary" ]; then
+            echo "ERROR: $binary missing from $(
+                basename "$_archive")"
+            exit 1
+        fi
+        install -Dm755 "$binary" "$pkgdir/usr/bin/$binary"
     done
     install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
     cp -r wwwroot "$pkgdir/usr/share/ferron/wwwroot"
