@@ -153,7 +153,8 @@ jobs:
                 echo "changed=true" >> $GITHUB_OUTPUT
 
             - name: Update checksums
-              if: steps.upd.outputs.changed == 'true'
+              # a VCS package has no versioned source to checksum
+              if: steps.upd.outputs.changed == 'true' && matrix.kind != 'git'
               run: |
                 PKG_DIR="packages/${{ matrix.pkg }}"
                 TARGET="${{ steps.target.outputs.version }}"
@@ -282,35 +283,9 @@ jobs:
                     fi
                 done
 
-                # a package whose AUR files differ from what we just built has
-                # to be republished even when this repository has not changed,
-                # and one with no AUR repo yet has to be created.
-                # Compare against the artifact, not the checkout: .SRCINFO is
-                # gitignored and never exists in the working tree.
-                for dir in artifacts/pkg-*; do
-                    pkg=$(basename "$dir" | sed 's/^pkg-//')
-                    case " $CHANGED " in *" $pkg "*) continue ;; esac
-                    if git ls-remote --exit-code \
-                        "ssh://aur@aur.archlinux.org/$pkg.git" HEAD > /dev/null 2>&1; then
-                        differs=""
-                        for f in PKGBUILD $(cd "$dir" && ls *.install 2>/dev/null) .SRCINFO; do
-                            [ -f "$dir/$f" ] || continue
-                            remote=$(curl -fsSL "https://aur.archlinux.org/cgit/aur.git/plain/$f?h=$pkg" 2>/dev/null)
-                            if [ "$remote" != "$(cat "$dir/$f")" ]; then
-                                differs="$differs $f"
-                            fi
-                        done
-                        if [ -n "$differs" ]; then
-                            echo "$pkg differs on the AUR ($differs ), will republish"
-                            CHANGED="$CHANGED $pkg"
-                        else
-                            echo "$pkg is unchanged on the AUR"
-                        fi
-                    else
-                        echo "$pkg has no AUR repo yet, will be created"
-                        CHANGED="$CHANGED $pkg"
-                    fi
-                done
+                # the update jobs already decided what changed, including
+                # packages that only differ from the AUR copy, so every
+                # artifact here is something that has to be published
 
                 if [ -z "$CHANGED" ]; then
                     echo "No package changed, nothing to publish"
