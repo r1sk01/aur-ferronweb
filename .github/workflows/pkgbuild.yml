@@ -129,10 +129,12 @@ jobs:
 
                 if [ "$PKG" = "ferronweb" ]; then
                     for PKG_ARCH in x86_64 i686 armv7h aarch64 riscv64; do
+                        # SRC_ARCH is what upstream calls it, PKG_ARCH is the
+                        # CARCH the PKGBUILD keys its arrays by
                         case "$PKG_ARCH" in
-                            armv7h) SRC_ARCH='armv7'; ABI='eabihf'; KEY='armv7' ;;
-                            riscv64) SRC_ARCH='riscv64gc'; ABI=''; KEY='riscv64' ;;
-                            *) SRC_ARCH="$PKG_ARCH"; ABI=''; KEY="$PKG_ARCH" ;;
+                            armv7h) SRC_ARCH='armv7'; ABI='eabihf' ;;
+                            riscv64) SRC_ARCH='riscv64gc'; ABI='' ;;
+                            *) SRC_ARCH="$PKG_ARCH"; ABI='' ;;
                         esac
                         FILE_NAME="ferron-$TARGET-$SRC_ARCH-unknown-linux-gnu${ABI}.zip"
                         URL="https://dl.ferron.sh/$TARGET/$FILE_NAME"
@@ -142,8 +144,8 @@ jobs:
                             exit 1
                         }
                         CHECKSUM=$(sha256sum "$FILE_NAME" | cut -d ' ' -f 1)
-                        echo "  $KEY: $CHECKSUM"
-                        sed -i "s/^sha256sums_$KEY=.*\$/sha256sums_$KEY='$CHECKSUM'/" "$PKG_DIR/PKGBUILD"
+                        echo "  $PKG_ARCH: $CHECKSUM"
+                        sed -i "s/^sha256sums_$PKG_ARCH=.*\$/sha256sums_$PKG_ARCH='$CHECKSUM'/" "$PKG_DIR/PKGBUILD"
                     done
                     # pin LICENSE to the tagged commit, matching _commit in the PKGBUILD
                     COMMIT=$(curl -fsSL --retry 5 --retry-all-errors "https://api.github.com/repos/ferronweb/ferron/git/ref/tags/$TARGET" | grep -oP '"sha":\s*"\K[a-f0-9]+' | head -1)
@@ -153,7 +155,8 @@ jobs:
                     curl -fsSL --retry 5 --retry-all-errors "https://raw.githubusercontent.com/ferronweb/ferron/$COMMIT/LICENSE" -o /tmp/LICENSE \
                         || { echo "ERROR: cannot fetch LICENSE for $COMMIT"; exit 1; }
                     LICENSE_SUM=$(sha256sum /tmp/LICENSE | cut -d ' ' -f 1)
-                    sed -i "s/^sha256sums_LICENSE=.*\$/sha256sums_LICENSE='$LICENSE_SUM'/" "$PKG_DIR/PKGBUILD"
+                    # the license is arch-independent, so it lives in the plain array
+                    sed -i "0,/^sha256sums=(.*\$/s//sha256sums=('$LICENSE_SUM')/" "$PKG_DIR/PKGBUILD"
                 else
                     # TARGET is already the upstream tag: 2.8.1, or 3.0.0-rc.11 for an RC
                     URL="https://github.com/ferronweb/ferron/archive/refs/tags/$TARGET.tar.gz"
