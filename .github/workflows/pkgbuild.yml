@@ -43,7 +43,6 @@ jobs:
 
             - name: Install makepkg
               run: |
-                # matrix jobs may share one machine, so serialise on dpkg's lock
                 sudo flock /var/lib/dpkg/lock-frontend bash -c '
                     apt-get update
                     apt-get -q -y install --no-install-recommends \
@@ -53,8 +52,6 @@ jobs:
                         fakeroot fakechroot libarchive-tools
                 '
                 sudo mkdir -p /usr/local/meson
-                # each job may run concurrently in one workspace, so every
-                # shared step has to tolerate another job having done it
                 if [ ! -f /usr/local/meson/meson.py ]; then
                     sudo git clone --depth=1 https://github.com/mesonbuild/meson.git /usr/local/meson
                 fi
@@ -63,8 +60,6 @@ jobs:
                     sudo mv /usr/bin/meson /usr/bin/meson-${mver}
                 fi
                 sudo ln -sf /usr/local/meson/meson.py /usr/bin/meson
-                # a unique dir, so concurrent matrix jobs sharing a workspace
-                # cannot collide on the clone
                 work=$(mktemp -d)
                 git clone --depth=1 https://gitlab.archlinux.org/pacman/pacman.git "$work/pacman"
                 cd "$work/pacman"
@@ -97,15 +92,11 @@ jobs:
                 CURRENT=$(grep -oP 'pkgver=\K[^\s]+' "$PKG_DIR/PKGBUILD")
                 echo "current=$CURRENT target=$TARGET"
 
-                # a VCS package has no upstream version to follow, so there is
-                # nothing to bump here. It is decided after .SRCINFO is built.
                 if [ "${{ matrix.kind }}" = "git" ]; then
                     echo "versionchanged=false" >> $GITHUB_OUTPUT
                     exit 0
                 fi
 
-                # upstream reports the RC as 3.0.0-rc.11, and pkgver may not
-                # hold a hyphen
                 PKGVER="${TARGET//-/}"
 
                 if [ "$CURRENT" = "$PKGVER" ]; then
@@ -115,12 +106,10 @@ jobs:
 
                 echo "upstream $CURRENT -> $PKGVER"
                 sed -i "s/^pkgver=.*\$/pkgver=$PKGVER/" "$PKG_DIR/PKGBUILD"
-                # a new upstream version resets the packaging release
                 sed -i 's/^pkgrel=.*$/pkgrel=1/' "$PKG_DIR/PKGBUILD"
                 echo "versionchanged=true" >> $GITHUB_OUTPUT
 
             - name: Update checksums
-              # a VCS package has no versioned source to checksum
               if: steps.upd.outputs.versionchanged == 'true' && matrix.kind != 'git'
               run: |
                 PKG_DIR="packages/${{ matrix.pkg }}"
@@ -129,8 +118,6 @@ jobs:
 
                 if [ "$PKG" = "ferronweb" ]; then
                     for PKG_ARCH in x86_64 i686 armv7h aarch64 riscv64; do
-                        # SRC_ARCH is what upstream calls it, PKG_ARCH is the
-                        # CARCH the PKGBUILD keys its arrays by
                         case "$PKG_ARCH" in
                             armv7h) SRC_ARCH='armv7'; ABI='eabihf' ;;
                             riscv64) SRC_ARCH='riscv64gc'; ABI='' ;;
@@ -147,7 +134,6 @@ jobs:
                         echo "  $PKG_ARCH: $CHECKSUM"
                         sed -i "s/^sha256sums_$PKG_ARCH=.*\$/sha256sums_$PKG_ARCH='$CHECKSUM'/" "$PKG_DIR/PKGBUILD"
                     done
-                    # pin LICENSE to the tagged commit, matching _commit in the PKGBUILD
                     COMMIT=$(curl -fsSL --retry 5 --retry-all-errors "https://api.github.com/repos/ferronweb/ferron/git/ref/tags/$TARGET" | grep -oP '"sha":\s*"\K[a-f0-9]+' | head -1)
                     [ -n "$COMMIT" ] || { echo "ERROR: cannot resolve tag $TARGET"; exit 1; }
                     echo "  commit: $COMMIT"
@@ -155,10 +141,8 @@ jobs:
                     curl -fsSL --retry 5 --retry-all-errors "https://raw.githubusercontent.com/ferronweb/ferron/$COMMIT/LICENSE" -o /tmp/LICENSE \
                         || { echo "ERROR: cannot fetch LICENSE for $COMMIT"; exit 1; }
                     LICENSE_SUM=$(sha256sum /tmp/LICENSE | cut -d ' ' -f 1)
-                    # the license is arch-independent, so it lives in the plain array
                     sed -i "0,/^sha256sums=(.*\$/s//sha256sums=('$LICENSE_SUM')/" "$PKG_DIR/PKGBUILD"
                 else
-                    # TARGET is already the upstream tag: 2.8.1, or 3.0.0-rc.11 for an RC
                     URL="https://github.com/ferronweb/ferron/archive/refs/tags/$TARGET.tar.gz"
                     echo "Downloading $URL"
                     curl -fsSL --retry 5 --retry-all-errors "$URL" -o /tmp/tarball \
@@ -170,10 +154,6 @@ jobs:
 
             - name: Regenerate .SRCINFO
               run: |
-                # makepkg refuses to run as root, and act's container is root.
-                # Work in a scratch copy so a bind-mounted workspace keeps its
-                # ownership, and only the generated .SRCINFO is copied back.
-                # Absolute paths throughout: the scratch step changes directory.
                 WORKSPACE="$GITHUB_WORKSPACE"
                 PKG_DIR="$WORKSPACE/packages/${{ matrix.pkg }}"
                 SCRATCH=/tmp/srccheck
@@ -181,13 +161,7 @@ jobs:
                 rm -rf "$SCRATCH" && mkdir -p "$SCRATCH"
                 cp -r "$PKG_DIR"/. "$SCRATCH"/
 
-                # makepkg --printsrcinfo does not run pkgver(), so a VCS package
-                # would publish the placeholder literal. Resolve it the way
-                # makepkg would and write it into the scratch copy.
                 if [ "${{ matrix.kind }}" = "git" ]; then
-                    # pkgver() needs the repo and its tags, so give it a shallow
-                    # clone to describe. Resolve the version into the real
-                    # PKGBUILD before .SRCINFO is generated from it.
                     ( cd "$SCRATCH" && srcdir="$SCRATCH/src" && mkdir -p "$srcdir" \
                         && git clone -q --depth=200 --branch develop-3.x \
                             https://github.com/ferronweb/ferron.git "$srcdir/ferron" \
@@ -215,17 +189,12 @@ jobs:
                 PKG_DIR="$GITHUB_WORKSPACE/packages/${{ matrix.pkg }}"
                 PKG="${{ matrix.pkg }}"
 
-                # every tracked file has to match before there is nothing to do.
-                # .SRCINFO is the one that goes stale silently, because it is
-                # generated and gitignored, so compare it too.
                 for f in PKGBUILD $(cd "$PKG_DIR" && ls *.install 2>/dev/null) .SRCINFO; do
                     [ -f "$PKG_DIR/$f" ] || continue
                     remote=$(curl -fsSL "https://aur.archlinux.org/cgit/aur.git/plain/$f?h=$PKG" 2>/dev/null)
                     if [ "$remote" = "$(cat "$PKG_DIR/$f")" ]; then
                         continue
                     fi
-                    # users only rebuild when pkgrel moves, so a packaging change
-                    # that is not an upstream bump has to move it
                     if [ "${{ steps.upd.outputs.versionchanged }}" = "false" ]; then
                         rel=$(grep -oP 'pkgrel=\K[0-9]+' "$PKG_DIR/PKGBUILD")
                         rel=$((rel + 1))
@@ -241,14 +210,10 @@ jobs:
                 echo "$PKG is unchanged on the AUR"
 
             - name: Upload package
-              # unchanged packages have nothing to publish, and uploading them
-              # would make the publish step republish everything every run
               if: steps.decide.outputs.changed == 'true'
               uses: actions/upload-artifact@v5
               with:
                 name: pkg-${{ matrix.pkg }}
-                # .SRCINFO is a dotfile and gitignored; v4 silently drops
-                # hidden files, so they have to be asked for
                 include-hidden-files: true
                 path: |
                     packages/${{ matrix.pkg }}/PKGBUILD
@@ -299,10 +264,6 @@ jobs:
                     [ -d "$dir" ] || continue
                     pkg=$(basename "$dir" | sed 's/^pkg-//')
                     cp -r "$dir"/. "packages/$pkg"/
-                    # every artifact is something the update jobs decided to
-                    # publish, so it goes to the AUR. Only what git sees as a
-                    # change is committed here, because .SRCINFO is gitignored
-                    # and an .SRCINFO-only change would otherwise be dropped.
                     CHANGED="$CHANGED $pkg"
                     if ! git diff --quiet HEAD -- "packages/$pkg"; then
                         GITCHANGED="$GITCHANGED $pkg"
@@ -322,8 +283,6 @@ jobs:
 
                 for pkg in $CHANGED; do
                     echo "Publishing $pkg"
-                    # the AUR creates the repo on first push, so an empty or
-                    # missing remote is the normal case for a new package
                     git clone "ssh://aur@aur.archlinux.org/$pkg.git" "aur-$pkg" 2>/dev/null || {
                         echo "  no AUR repo for $pkg, initialising"
                         mkdir -p "aur-$pkg"
@@ -331,10 +290,7 @@ jobs:
                         git -C "aur-$pkg" remote add origin "ssh://aur@aur.archlinux.org/$pkg.git"
                     }
                     cd "aur-$pkg"
-                    # the AUR only accepts pushes to master
                     git symbolic-ref HEAD refs/heads/master
-                    # the AUR repo carries only PKGBUILD, the .install script and
-                    # a generated .SRCINFO, nothing else from this repository
                     cp "../packages/$pkg/PKGBUILD" "../packages/$pkg"/*.install ./
                     cp "../packages/$pkg/.SRCINFO" ./
                     test -s .SRCINFO || { echo "ERROR: no .SRCINFO for $pkg"; exit 1; }
