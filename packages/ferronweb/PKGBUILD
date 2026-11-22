@@ -11,6 +11,7 @@ depends=('gcc-libs' 'glibc' 'ca-certificates')
 provides=("ferron=$pkgver")
 conflicts=('ferron' 'ferron-git' 'ferron-rc' 'ferron-bin' 'ferronweb-bin' 'ferronweb-git')
 install=ferron.install
+backup=('etc/ferron.kdl')
 options=('!strip')
 
 case "$CARCH" in

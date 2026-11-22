@@ -12,6 +12,7 @@ makedepends=('cargo' 'git')
 provides=("ferron=$pkgver")
 conflicts=('ferron' 'ferron-git' 'ferronweb' 'ferron-bin' 'ferronweb-bin' 'ferronweb-git')
 install=ferron-rc.install
+backup=('etc/ferron/ferron.conf')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/ferronweb/ferron/archive/refs/tags/3.0.0-rc.11.tar.gz")
 sha256sums=('55d536760efadd856bd81ceccd439e66be60c50a31046f96c3a2500735c9d268')
 
