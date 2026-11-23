@@ -11,7 +11,6 @@ depends=('gcc-libs' 'glibc' 'ca-certificates')
 makedepends=('cargo' 'git')
 conflicts=('ferron-git' 'ferron-rc' 'ferronweb' 'ferron-bin' 'ferronweb-bin' 'ferronweb-git')
 install=ferron.install
-backup=('etc/ferron.kdl')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/ferronweb/ferron/archive/refs/tags/$pkgver.tar.gz")
 sha256sums=('32354ffed4fbe8caede924d420e6a7ac84127f264c47e1e738b462d9479c0680')
 

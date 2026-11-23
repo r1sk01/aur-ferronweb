@@ -1,0 +1,20 @@
+post_upgrade() {
+    cat << 'EOF'
+
+  ferronweb has moved to ferron-bin
+
+  This package no longer installs anything. The prebuilt binary now lives
+  in ferron-bin, which you should install in its place:
+
+      yay -S ferron-bin
+
+  Once that is done, remove the shim:
+
+      yay -R ferronweb
+
+EOF
+}
+
+post_install() {
+    post_upgrade
+}
