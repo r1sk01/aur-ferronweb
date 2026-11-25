@@ -8,8 +8,6 @@ arch=('x86_64' 'i686' 'armv7h' 'aarch64' 'riscv64')
 url='https://ferron.sh'
 license=('MIT')
 install=ferronweb.install
-provides=('ferronweb')
-replaces=('ferronweb')
 
 package() {
     install -dm755 "$pkgdir/usr/share/doc/$pkgname"
@@ -24,25 +22,4 @@ Then remove this package:
 
     yay -R ferronweb
 EOF
-}
-
-post_upgrade() {
-    cat << 'EOF'
-
-  ferronweb has moved to ferron-bin
-
-  This package no longer installs anything. The prebuilt binary now lives
-  in ferron-bin, which you should install in its place:
-
-      yay -S ferron-bin
-
-  Once that is done, remove the shim:
-
-      yay -R ferronweb
-
-EOF
-}
-
-post_install() {
-    post_upgrade
 }

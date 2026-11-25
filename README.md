@@ -22,9 +22,9 @@ Arch Linux packages for [Ferron](https://ferron.sh), a fast, modern web server w
 
 <details>
 
-<summary>Last checked 2026-11-25 03:40 UTC</summary>
+<summary>Last checked 2026-11-25 03:51 UTC</summary>
 
-- Fix a small error in the README.md
+- Read package descriptions from the PKGBUILDs for the README
 
 </details>
 
