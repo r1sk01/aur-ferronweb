@@ -286,8 +286,6 @@ jobs:
                     fi
                 done
 
-                # the README carries a last-checked time, so it always moves and
-                # always gives the repository activity
                 git add README.md packages
 
                 if git diff --cached --quiet; then
@@ -327,7 +325,9 @@ jobs:
                         echo "  $pkg already up to date on the AUR"
                     else
                         git commit -m "Update package"
-                        git push origin master
+                        if [ ! "$(pkg)" = "ferron-bin" ]; then
+                            git push origin master
+                        fi
                     fi
                     cd ..
                 done
