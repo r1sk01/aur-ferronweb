@@ -1,7 +1,11 @@
-# ferronweb
+# Ferron (AUR)
 
 [![PKGBUILD Updater](https://github.com/r1sk01/aur-ferronweb/actions/workflows/pkgbuild.yml/badge.svg)](https://github.com/r1sk01/aur-ferronweb/actions/workflows/pkgbuild.yml)
-[![AUR](https://img.shields.io/badge/AUR-ferron-blue?logo=archlinux&logoColor=white)](https://aur.archlinux.org/packages/ferron)
+[![ferron](https://img.shields.io/badge/AUR-ferron-1793d1?logo=archlinux&logoColor=white)](https://aur.archlinux.org/packages/ferron)
+[![ferron-bin](https://img.shields.io/badge/AUR-ferron--bin-1793d1?logo=archlinux&logoColor=white)](https://aur.archlinux.org/packages/ferron-bin)
+[![ferron-rc](https://img.shields.io/badge/AUR-ferron--rc-1793d1?logo=archlinux&logoColor=white)](https://aur.archlinux.org/packages/ferron-rc)
+[![ferron-git](https://img.shields.io/badge/AUR-ferron--git-1793d1?logo=archlinux&logoColor=white)](https://aur.archlinux.org/packages/ferron-git)
+[![ferronweb](https://img.shields.io/badge/AUR-ferronweb-1793d1?logo=archlinux&logoColor=white)](https://aur.archlinux.org/packages/ferronweb)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/ferronweb/ferron/blob/develop-3.x/LICENSE)
 
 Arch Linux packages for [Ferron](https://ferron.sh), a fast, modern web server written in Rust.
@@ -18,9 +22,9 @@ Arch Linux packages for [Ferron](https://ferron.sh), a fast, modern web server w
 
 <details>
 
-<summary>Last checked 2026-11-25 03:21 UTC</summary>
+<summary>Last checked 2026-11-25 03:28 UTC</summary>
 
-- Move the prebuilt binary to ferron-bin and make ferronweb a shim
+- Generate the README from a template on every run
 
 </details>
 
