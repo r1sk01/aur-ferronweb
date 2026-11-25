@@ -30,5 +30,4 @@ Arch Linux packages for [Ferron](https://ferron.sh), a fast, modern web server w
 
 ## License
 
-Ferron is MIT licensed. The packaging in this repository is maintained by
-[r1sk01](https://github.com/r1sk01).
+Ferron is MIT licensed. The packaging in this repository is maintained by [r1sk01](https://github.com/r1sk01).
