@@ -10,11 +10,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TMPL = ROOT / ".github" / "readme.tmpl"
 
 ROWS = [
-    ("ferron", "source", "latest stable", "A fast, modern web server written in Rust"),
-    ("ferron-bin", "prebuilt", "latest stable", "A fast, modern web server written in Rust (prebuilt binaries)"),
-    ("ferron-rc", "source", "release candidates", "A fast, modern web server written in Rust (release candidate)"),
-    ("ferron-git", "source", "`develop-3.x`", "A fast, modern web server written in Rust (git)"),
-    ("ferronweb", "shim", "n/a", "A fast, modern web server written in Rust (prebuilt binaries)"),
+    ("ferron", "source", "latest stable"),
+    ("ferron-bin", "prebuilt", "latest stable"),
+    ("ferron-rc", "source", "release candidates"),
+    ("ferron-git", "source", "`develop-3.x`"),
+    ("ferronweb", "shim", "N/A"),
 ]
 
 
@@ -28,8 +28,9 @@ def field(pkg: str, key: str) -> str:
 
 def main() -> None:
     rows = []
-    for pkg, build, follows, desc in ROWS:
+    for pkg, build, follows in ROWS:
         version = f"{field(pkg, 'pkgver')}-{field(pkg, 'pkgrel')}"
+        desc = field(pkg, "pkgdesc")
         rows.append(f"| [`{pkg}`](/packages/{pkg}) | {version} | {build} | {follows} | {desc} |")
 
     log = subprocess.run(
