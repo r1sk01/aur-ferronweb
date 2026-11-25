@@ -1,24 +1,18 @@
 post_install() {
-    # ferron-bin reads this to tell a replaced ferronweb from a fresh install
-    install -dm755 /var/lib/ferron
-    : > /var/lib/ferron/from-ferronweb
     post_upgrade
 }
 
 post_upgrade() {
-    install -dm755 /var/lib/ferron
-    : > /var/lib/ferron/from-ferronweb
-
     cat << 'EOF'
 
   ferronweb has moved to ferron-bin
 
-  This package no longer installs anything. The prebuilt binary now lives
-  in ferron-bin, which you should install in its place:
+  This package installs nothing of its own any more. ferron-bin has been
+  installed alongside it, and that is the one to use:
 
       yay -S ferron-bin
 
-  Once that is done, remove the shim:
+  Once you have confirmed ferron works, this shim can go:
 
       yay -R ferronweb
 

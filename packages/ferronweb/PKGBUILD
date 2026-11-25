@@ -7,6 +7,7 @@ pkgdesc='Shim to push users from this package to the new ferron-bin package'
 arch=('x86_64' 'i686' 'armv7h' 'aarch64' 'riscv64')
 url='https://ferron.sh'
 license=('MIT')
+depends=('ferron-bin')
 install=ferronweb.install
 
 package() {

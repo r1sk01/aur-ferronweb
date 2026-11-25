@@ -8,9 +8,8 @@ arch=('x86_64' 'i686' 'armv7h' 'aarch64' 'riscv64')
 url='https://ferron.sh'
 license=('MIT')
 depends=('gcc-libs' 'glibc' 'ca-certificates')
-provides=("ferron=$pkgver" "ferronweb=$pkgver")
-replaces=('ferronweb')
-conflicts=('ferron' 'ferronweb' 'ferron-git' 'ferron-rc' 'ferronweb-git')
+provides=("ferron=$pkgver")
+conflicts=('ferron' 'ferron-git' 'ferron-rc' 'ferronweb-git')
 install=ferron-bin.install
 options=('!strip')
 
