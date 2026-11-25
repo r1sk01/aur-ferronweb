@@ -31,12 +31,14 @@ jobs:
                 include:
                     - pkg: ferron
                       kind: stable
-                    - pkg: ferronweb
+                    - pkg: ferron-bin
                       kind: stable
                     - pkg: ferron-rc
                       kind: rc
                     - pkg: ferron-git
                       kind: git
+                    - pkg: ferronweb
+                      kind: shim
         steps:
             - name: Checkout code
               uses: actions/checkout@v5
@@ -81,6 +83,7 @@ jobs:
                 case "${{ matrix.kind }}" in
                     stable) echo "version=${{ needs.resolve.outputs.stable }}" >> $GITHUB_OUTPUT ;;
                     rc) echo "version=${{ needs.resolve.outputs.rc }}" >> $GITHUB_OUTPUT ;;
+                    shim) echo "version=${{ needs.resolve.outputs.stable }}" >> $GITHUB_OUTPUT ;;
                     git) echo "version=" >> $GITHUB_OUTPUT ;;
                 esac
 
@@ -110,13 +113,13 @@ jobs:
                 echo "versionchanged=true" >> $GITHUB_OUTPUT
 
             - name: Update checksums
-              if: steps.upd.outputs.versionchanged == 'true' && matrix.kind != 'git'
+              if: steps.upd.outputs.versionchanged == 'true' && matrix.kind != 'git' && matrix.kind != 'shim'
               run: |
                 PKG_DIR="packages/${{ matrix.pkg }}"
                 TARGET="${{ steps.target.outputs.version }}"
                 PKG="${{ matrix.pkg }}"
 
-                if [ "$PKG" = "ferronweb" ]; then
+                if [ "$PKG" = "ferron-bin" ]; then
                     for PKG_ARCH in x86_64 i686 armv7h aarch64 riscv64; do
                         case "$PKG_ARCH" in
                             armv7h) SRC_ARCH='armv7'; ABI='eabihf' ;;
@@ -200,7 +203,17 @@ jobs:
                         rel=$((rel + 1))
                         sed -i "s/^pkgrel=.*\$/pkgrel=$rel/" "$PKG_DIR/PKGBUILD"
                         echo "packaging differs on the AUR, pkgrel=$rel"
-                        ( cd "$PKG_DIR" && CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO 2>/dev/null )
+                        SCRATCH=/tmp/decide
+                        rm -rf "$SCRATCH" && mkdir -p "$SCRATCH"
+                        cp -r "$PKG_DIR"/. "$SCRATCH"/
+                        if [ "$(id -u)" = "0" ]; then
+                            id builder > /dev/null 2>&1 || useradd -m builder
+                            chown -R builder:builder "$SCRATCH"
+                            runuser -u builder -- bash -c "cd '$SCRATCH' && CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO"
+                        else
+                            ( cd "$SCRATCH" && CARCH=x86_64 makepkg --printsrcinfo > .SRCINFO )
+                        fi
+                        cp "$SCRATCH/.SRCINFO" "$PKG_DIR/.SRCINFO"
                     fi
                     echo "changed=true" >> $GITHUB_OUTPUT
                     exit 0
@@ -250,6 +263,9 @@ jobs:
                 EOF
                 ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
 
+            - name: Regenerate the README
+              run: python3 .github/readme.py
+
             - name: Apply, commit and publish changed packages
               env:
                 AURUSER: 'r1sk'
@@ -270,15 +286,25 @@ jobs:
                     fi
                 done
 
-                if [ -z "$CHANGED" ]; then
-                    echo "No package changed, nothing to publish"
+                # the README carries a last-checked time, so it always moves and
+                # always gives the repository activity
+                git add README.md packages
+
+                if git diff --cached --quiet; then
+                    echo "Nothing changed, nothing to publish"
                     exit 0
                 fi
 
                 if [ -n "$GITCHANGED" ]; then
-                    git add packages
                     git commit -m "Update packages:$GITCHANGED"
-                    git push origin master
+                else
+                    git commit -m "Refresh the package status"
+                fi
+                git push origin master
+
+                if [ -z "$CHANGED" ]; then
+                    echo "No package changed, README only"
+                    exit 0
                 fi
 
                 for pkg in $CHANGED; do
