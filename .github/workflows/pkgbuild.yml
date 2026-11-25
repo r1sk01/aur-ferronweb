@@ -325,7 +325,7 @@ jobs:
                         echo "  $pkg already up to date on the AUR"
                     else
                         git commit -m "Update package"
-                        if [ ! "$(pkg)" = "ferron-bin" ]; then
+                        if [ ! "$(pkg)" = "ferron-bin" && ! "$(pkg)" = "ferronweb" ]; then
                             git push origin master
                         fi
                     fi
