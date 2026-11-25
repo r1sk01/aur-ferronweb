@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render README.md from .github/readme.tmpl and the current PKGBUILDs."""
+"""Render README.md from .github/readme.tmpl.md and the current PKGBUILDs."""
 
 import datetime
 import pathlib
@@ -7,7 +7,7 @@ import re
 import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-TMPL = ROOT / ".github" / "readme.tmpl"
+TMPL = ROOT / ".github" / "readme.tmpl.md"
 
 ROWS = [
     ("ferron", "source", "latest stable"),

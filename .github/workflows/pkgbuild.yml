@@ -264,7 +264,7 @@ jobs:
                 ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
 
             - name: Regenerate the README
-              run: python3 .github/readme.py
+              run: python3 .github/render_readme.py
 
             - name: Apply, commit and publish changed packages
               env:
