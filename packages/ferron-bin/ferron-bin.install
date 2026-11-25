@@ -72,6 +72,24 @@ post_install() {
 }
 
 post_upgrade() {
+    # pacman passes the old version as $1. A user coming from ferronweb arrives
+    # here because ferron-bin replaces it, and the shim's own post_upgrade never
+    # runs on that path, so the notice has to live here. The shim drops a stamp
+    # when it is installed, which is the only reliable sign of where they came from.
+    if [ -f /var/lib/ferron/from-ferronweb ]; then
+        rm -f /var/lib/ferron/from-ferronweb
+        cat << 'EOF'
+
+  ferronweb has been replaced by ferron-bin
+
+  This is the same prebuilt binary under its new name. Nothing else to do,
+  and you can drop the old package if it is still around:
+
+      yay -R ferronweb
+
+EOF
+    fi
+
     if [ -f /etc/ferron.yaml ] && [ ! -f /etc/ferron.kdl ]; then
         if command -v ferron-yaml2kdl >/dev/null 2>&1; then
             echo "==> Detected legacy /etc/ferron.yaml, converting to /etc/ferron.kdl"
