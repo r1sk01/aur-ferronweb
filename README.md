@@ -15,16 +15,16 @@ Arch Linux packages for [Ferron](https://ferron.sh), a fast, modern web server w
 | Package | Version | Build | Follows | Description |
 | --- | --- | --- | --- | --- |
 | [`ferron`](/packages/ferron) | 2.8.1-5 | source | latest stable | A fast, modern web server written in Rust |
-| [`ferron-bin`](/packages/ferron-bin) | 2.8.1-5 | prebuilt | latest stable | A fast, modern web server written in Rust (prebuilt binaries) |
+| [`ferron-bin`](/packages/ferron-bin) | 2.8.1-6 | prebuilt | latest stable | A fast, modern web server written in Rust (prebuilt binaries) |
 | [`ferron-rc`](/packages/ferron-rc) | 3.0.0rc.11-5 | source | release candidates | A fast, modern web server written in Rust (release candidate) |
-| [`ferron-git`](/packages/ferron-git) | 3.0.0.rc.11.r47.g907a108-9 | source | `develop-3.x` | A fast, modern web server written in Rust (git) |
-| [`ferronweb`](/packages/ferronweb) | 2.8.1-7 | shim | N/A | Shim to push users from this package to the new ferron-bin package |
+| [`ferron-git`](/packages/ferron-git) | 3.0.0.rc.11.r47.g907a108-10 | source | `develop-3.x` | A fast, modern web server written in Rust (git) |
+| [`ferronweb`](/packages/ferronweb) | 2.8.1-8 | shim | N/A | Shim to push users from this package to the new ferron-bin package |
 
 <details>
 
-<summary>Last checked 2026-11-25 12:56 UTC</summary>
+<summary>Last checked 2026-11-26 10:26 UTC</summary>
 
-- DO NOT WRITE CODE WHEN ITS LATE AT NIGHT BAHHHH
+- Update packages: ferron-bin ferron-git ferronweb
 
 </details>
 
